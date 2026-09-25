@@ -1,0 +1,19 @@
+# LLM / Agent
+langgraph
+langchain
+openai
+
+# 空间数据
+osmnx
+geopandas
+h3
+
+# API 服务
+fastapi
+uvicorn
+
+# 向量数据库
+qdrant-client
+
+# 数据校验
+pydantic
