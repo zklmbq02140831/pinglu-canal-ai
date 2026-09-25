@@ -18,3 +18,17 @@ node_modules/
 .vscode/
 .idea/
 .DS_Store
+
+# SRTM地形数据
+*.img
+*.tif
+*.hgt
+
+# 数据集、大压缩包
+*.zip
+*.rar
+*.7z
+
+# 日志、临时文件
+*.log
+
