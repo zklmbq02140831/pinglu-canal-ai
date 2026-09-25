@@ -23,6 +23,7 @@ node_modules/
 *.img
 *.tif
 *.hgt
+*.gpkg
 
 # 数据集、大压缩包
 *.zip
