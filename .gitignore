@@ -26,6 +26,18 @@ node_modules/
 *.gpkg
 *.csv
 
+# Shapefile 整套，不提交shp备用文件
+**/*.shp
+**/*.dbf
+**/*.shx
+**/*.prj
+**/*.cpg
+**/*.qmd
+
+# 自动生成的网页可视化报告
+*.html
+
+
 # 数据集、大压缩包
 *.zip
 *.rar
