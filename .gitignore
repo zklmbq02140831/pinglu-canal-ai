@@ -24,7 +24,10 @@ node_modules/
 *.tif
 *.hgt
 *.gpkg
-*.csv
+data/raw/*.pbf
+
+# 大体积可再生成数据不入库
+data/processed/poi_all.csv
 
 # Shapefile 整套，不提交shp备用文件
 **/*.shp
@@ -33,9 +36,12 @@ node_modules/
 **/*.prj
 **/*.cpg
 **/*.qmd
+*.cpg
 
 # 自动生成的网页可视化报告
 *.html
+data/raw/pois_amap*.csv
+*.aux.xml
 
 
 # 数据集、大压缩包
