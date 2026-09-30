@@ -1,4 +1,4 @@
-# -*- coding: utf-8 -*-
+﻿# -*- coding: utf-8 -*-
 """
 convert_gcj02_to_wgs84.py
 =========================
@@ -24,7 +24,7 @@ EE = 0.00669342162296594323   # 第一偏心率的平方
 
 # 文件路径：输入用高德抓的原始 CSV，输出为转换后的新 CSV
 IN_PATH = os.path.join("data", "raw", "pois_amap.csv")
-OUT_PATH = os.path.join("data", "raw", "pois_amap_wgs84.csv")
+OUT_PATH = os.path.join("data", "raw", "pois_wgs84.csv")
 
 
 # ========== 2. 判断坐标是否在中国境外 ==========

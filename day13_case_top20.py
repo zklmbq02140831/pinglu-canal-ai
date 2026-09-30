@@ -1,4 +1,4 @@
-# -*- coding: utf-8 -*-
+﻿# -*- coding: utf-8 -*-
 """Day13案例验证准备：composite_index Top20高值网格 + 网格内企业类POI候选清单。
 输出: data/processed/day13_case_top20.csv, data/processed/day13_case_candidates.csv
 """
@@ -91,7 +91,7 @@ top[cols].to_csv(ROOT + r"\data\processed\day13_case_top20.csv",
                  index=False, encoding="utf-8-sig")
 
 # ---------- 3. 网格内企业类 POI 候选 ----------
-poi = pd.read_csv(ROOT + r"\data\processed\pois_amap_wgs84.csv")
+poi = pd.read_csv(ROOT + r"\data\processed\pois_wgs84.csv")
 poi["hex"] = [h3.latlng_to_cell(a, o, RES)
               for a, o in zip(poi["lat_wgs84"], poi["lng_wgs84"])]
 top_set = set(top["hex_id"])

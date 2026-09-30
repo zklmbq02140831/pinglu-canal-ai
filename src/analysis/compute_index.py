@@ -1,4 +1,4 @@
-# -*- coding: utf-8 -*-
+﻿# -*- coding: utf-8 -*-
 """
 src/analysis/compute_index.py
 =============================
@@ -37,11 +37,11 @@ from shapely.ops import linemerge         # 多段线合并
 
 # ========== 2. 常量与字段统一映射（所有文件名/列名只在这里改） ==========
 HEX_FILE    = "data/processed/hex_grid.geojson"            # H3 网格
-POI_FILE    = "data/processed/pois_amap_wgs84.csv"         # POI（WGS-84）
+POI_FILE    = "data/processed/pois_wgs84.csv"         # POI（WGS-84）
 ROADS_FILE  = "data/processed/roads_clip.geojson"          # 裁剪后主干路网
 DEM_FILE    = "data/processed/dem_wgs84.tif"               # DEM（EPSG:4326）
 COUNTY_CSV  = "data/raw/stats_county.csv"                  # 区县统计（county_name,gdp_yiyuan）
-COUNTY_GEO  = "data/processed/counties.geojson"            # 区县边界（高德抓取）
+COUNTY_GEO  = "data/processed/counties.geojson"            # 区县边界（离线快照）
 CANAL_CANDIDATES = [                                       # 运河中心线（仅作图）
     "data/processed/canal_centerline.geojson",
     "data/raw/canal_centerline.geojson",
@@ -63,11 +63,12 @@ PORT_LON, PORT_LAT = 108.60, 21.70        # 钦州港坐标（规格固定值）
 EQ_AREA = "EPSG:6933"                     # 等积投影（算面积）
 UTM     = "EPSG:32648"                    # UTM 48N（算路网长度）
 
-GAODE_SAT = ("https://webst01.is.autonavi.com"
-             "/appmaptile?style=6&x={x}&y={y}&z={z}")   # 高德卫星瓦片
+# OSM 瓦片（Web Mercator / WGS84 兼容，无需 GCJ 加偏）
+OSM_TILES = ("https://tile.openstreetmap.org"
+             "/{z}/{x}/{y}.png")
 
 
-# ========== 3. GCJ-02 加偏（高德卫星瓦片是 GCJ-02，WGS-84 图层叠加前必须加偏） ==========
+# ========== 3. GCJ-02 加偏（保留函数供特殊瓦片场景；默认 OSM 不触发） ==========
 def wgs84_to_gcj02(lng, lat):
     """国测局标准加偏，仅用于 folium 显示对齐，不写入任何数据文件。"""
     if not (73.66 < lng < 135.05 and 3.86 < lat < 53.55):   # 境外不加偏
@@ -296,8 +297,8 @@ def export(df, x_std, comp, hex_county, canal):
     cmap = cm.linear.YlOrRd_05.scale(0, 1)                  # YlOrRd 五级色带
     m = folium.Map(location=[22.3, 108.9], zoom_start=9,    # 初始视野（规格指定）
                    tiles=None)
-    folium.TileLayer(tiles=GAODE_SAT, attr="高德卫星",      # 高德卫星底图
-                     name="高德卫星影像").add_to(m)
+    folium.TileLayer(tiles=OSM_TILES, attr="OpenStreetMap",
+                     name="OSM 底图").add_to(m)
 
     fg_hex = folium.FeatureGroup(name="五维指数网格")        # 网格图层
     for row in hexes.itertuples():                          # 逐网格画多边形

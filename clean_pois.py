@@ -1,9 +1,9 @@
-# -*- coding: utf-8 -*-
+﻿# -*- coding: utf-8 -*-
 """
 clean_pois.py
 =============
 清洗高德 POI 数据（WGS-84 版）：
-1. 读 data/raw/pois_amap_wgs84.csv
+1. 读 data/raw/pois_wgs84.csv
 2. 按 type 字段包含关键词（物流/仓储/工业园/产业园/港口/码头/货运/工业）过滤
 3. 剔除 name 里明显无关的记录（餐饮/火锅/饭店等）
 4. 转 GeoDataFrame（EPSG:4326）保存为 data/processed/pois_clean.geojson
@@ -21,7 +21,7 @@ import geopandas as gpd          # 构造 GeoDataFrame、写 GeoJSON
 from shapely.geometry import Point  # 把经纬度变成点几何
 
 # 输入：已纠偏为 WGS-84 的 POI 表；输出：清洗后的 GeoJSON
-IN_PATH = os.path.join("data", "raw", "pois_amap_wgs84.csv")
+IN_PATH = os.path.join("data", "raw", "pois_wgs84.csv")
 OUT_PATH = os.path.join("data", "processed", "pois_clean.geojson")
 
 # type 字段（高德分类链，如「交通设施服务;港口码头;港口」）包含任一关键词即保留

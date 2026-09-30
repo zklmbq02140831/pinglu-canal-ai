@@ -1,4 +1,4 @@
-# Day13 补充：Top20 高值网格企业案例验证（企查查 · 2026-09-29）
+﻿# Day13 补充：Top20 高值网格企业案例验证（企查查 · 2026-09-29）
 
 > 定位：**案例级定性佐证**，不参与 Day13 街道口径的统计判读（该判读维持「无效」，
 > 见 day13_protocol.md 第 8 节）。目的：检验 composite_index 高值网格是否对应
@@ -9,7 +9,7 @@
 1. **Top20 网格**：`land_sea_index_v1.csv` 按 composite_index 降序取前 20
    （H3 res 7，hex_id 前缀 87，格均面积 ≈5.16 km²）；用 `h3.cell_to_latlng`
    取格心，逐格标注是否属 Day12 凹槽条带（13 格清单见 day13_protocol.md 第 2 节）。
-2. **格内企业候选**：`pois_amap_wgs84.csv`（WGS-84）逐点 `h3.latlng_to_cell(·,·,7)`
+2. **格内企业候选**：`pois_wgs84.csv`（WGS-84）逐点 `h3.latlng_to_cell(·,·,7)`
    归格，筛 type 含 公司企业/工厂/物流/仓储/园区 的 POI，落在 Top20 网格者共
    **121 家**（`day13_case_candidates.csv`），按条带优先排序。
 3. **企查查验证**（免费账号）：对重点候选做**企业精确名称搜索**（规避第 8.2 节
