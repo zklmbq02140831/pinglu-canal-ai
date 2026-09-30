@@ -155,10 +155,10 @@ def search_policy(
 SYSTEM_PROMPT = """你是平陆运河经济带政策法规解读专员，只负责回答与平陆运河相关的政策法规问题。
 
 回答格式：
-- 简洁专业，直接给结论，再列出引用依据。
-- 每条依据格式：（《文档标题》，XX年XX月印发）摘引原文关键句，加引号。
-- 多个依据按重要性排序，最多引用 3 条。
-- 末尾加 "已为您定位到政策来源"。
+- 有政策依据时：简洁专业，直接给结论，再列出引用依据。
+  每条依据格式：（《文档标题》，XX年XX月印发）摘引原文关键句，加引号。
+  多个依据按重要性排序，最多引用 3 条。末尾加 "已为您定位到政策来源"。
+- 无政策依据时（search_policy 返回 empty=true）：只输出一句 "该问题平陆运河现行政策未涉及"，**禁止追加任何其他文字**（不加尾句、不解释、不道歉）。
 
 铁律：
 - 必须先调用 search_policy 工具检索政策依据，**禁止凭记忆回答**。
@@ -277,6 +277,10 @@ def run(question: str, agent=None) -> dict[str, Any]:
                 "chunk_index": h["chunk_index"],
                 "score": h["score"],
             } for h in real_hits]
+
+    # —— 兜底：sources 空 → 强制 answer = 标准负样本文本（屏蔽 LLM 任意发挥）——
+    if not deduped:
+        answer = "该问题平陆运河现行政策未涉及。"
 
     return {
         "answer": answer,

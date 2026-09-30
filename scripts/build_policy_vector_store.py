@@ -302,9 +302,12 @@ def main():
         if not chunks:
             continue
 
-        # 收集所有文本 → 清洗 → embedding
-        texts = [_normalize_spaces(c) for _, c in chunks]
-        vectors = _embed_batch(client_z, texts)
+        # 拼接上下文头：用于 embedding 时让向量感知文档来源
+        ctx_prefix = f"【文件：{title} | 发布机关：{issuer} | 发布日期：{issue_date}】\n"
+        embed_texts = [
+            _normalize_spaces(ctx_prefix + c) for _, c in chunks
+        ]
+        vectors = _embed_batch(client_z, embed_texts)
 
         for (chunk_idx, chunk_text), vec in zip(chunks, vectors):
             payload = {
