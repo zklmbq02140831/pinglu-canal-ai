@@ -1,0 +1,17 @@
+﻿side,cat,count,density,done
+exp,050000,2726,38.466,True
+exp,060000,4256,60.055,True
+exp,070000,2740,38.663,True
+exp,090000,1116,15.748,True
+exp,120000,696,9.821,True
+exp,140000,832,11.74,True
+exp,170000,1963,27.699,True
+exp,narrow_工厂仓储,88,1.242,True
+ctl,050000,70,0.443,True
+ctl,060000,359,2.271,True
+ctl,070000,90,0.569,True
+ctl,090000,16,0.101,True
+ctl,120000,45,0.285,True
+ctl,140000,48,0.304,True
+ctl,170000,435,2.752,True
+ctl,narrow_工厂仓储,31,0.196,True

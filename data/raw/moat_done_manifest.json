@@ -1,0 +1,16 @@
+{
+ "exp/050000": "bbox_full",
+ "ctl/050000": "bbox_full",
+ "exp/060000": "bbox_full",
+ "ctl/060000": "bbox_full",
+ "exp/070000": "bbox_full",
+ "ctl/070000": "bbox_full",
+ "exp/090000": "bbox_full",
+ "ctl/090000": "bbox_full",
+ "exp/120000": "bbox_full",
+ "exp/140000": "bbox_full",
+ "exp/170000": "bbox_full",
+ "ctl/120000": "C2",
+ "ctl/140000": "C2",
+ "ctl/170000": "C1(29格内431)"
+}

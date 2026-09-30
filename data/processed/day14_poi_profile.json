@@ -1,0 +1,34 @@
+{
+ "exp": {
+  "area_km2": 70.87,
+  "life": 12366,
+  "ind_wide": 1963,
+  "ind_narrow": 88,
+  "life_d": 174.4937330061755,
+  "ind_wide_d": 27.69943376120997,
+  "ind_narrow_d": 1.241747412626835,
+  "ratio_wide": 6.299541518084564,
+  "ratio_narrow": 140.52272727272728,
+  "total_in_grid": 18375
+ },
+ "ctl": {
+  "area_km2": 158.06,
+  "life": 628,
+  "ind_wide": 435,
+  "ind_narrow": 31,
+  "life_d": 3.973068409878937,
+  "ind_wide_d": 2.752045793467098,
+  "ind_narrow_d": 0.19612280367236792,
+  "ratio_wide": 1.4436781609195402,
+  "ratio_narrow": 20.258064516129032,
+  "total_in_grid": 1613
+ },
+ "mult_wide": 4.36,
+ "mult_narrow": 6.94,
+ "missing_done_marks": [],
+ "request_cost_tonight": {
+  "c1": 0,
+  "c2": 0,
+  "total": 0
+ }
+}

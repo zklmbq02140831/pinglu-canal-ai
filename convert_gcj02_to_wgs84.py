@@ -94,32 +94,33 @@ def gcj02_to_wgs84(lng: float, lat: float):
     return lng - dlng, lat - dlat                # 反向减掉偏移 = WGS-84
 
 
-# ========== 6. 主流程：读 CSV → 批量转换 → 写 CSV ==========
-df = pd.read_csv(IN_PATH, encoding="utf-8-sig")   # 读入高德原始 POI 表
-print(f"读入 {len(df)} 条 POI：{IN_PATH}")
+# ========== 6. 主流程：读 CSV → 批量转换 → 写 CSV（仅直接运行时执行） ==========
+if __name__ == "__main__":
+    df = pd.read_csv(IN_PATH, encoding="utf-8-sig")   # 读入高德原始 POI 表
+    print(f"读入 {len(df)} 条 POI：{IN_PATH}")
 
-wgs_list = [                                      # 逐行做坐标转换
-    gcj02_to_wgs84(row.lng, row.lat)
-    for row in df.itertuples()                    # itertuples 逐行取 lng/lat
-]
+    wgs_list = [                                      # 逐行做坐标转换
+        gcj02_to_wgs84(row.lng, row.lat)
+        for row in df.itertuples()                    # itertuples 逐行取 lng/lat
+    ]
 
-# 拆成两列新值，插到 lat 列后面，方便和原列左右对比
-df.insert(df.columns.get_loc("lat") + 1, "lng_wgs84",
-          [p[0] for p in wgs_list])               # 新列1：WGS-84 经度
-df.insert(df.columns.get_loc("lat") + 2, "lat_wgs84",
-          [p[1] for p in wgs_list])               # 新列2：WGS-84 纬度
+    # 拆成两列新值，插到 lat 列后面，方便和原列左右对比
+    df.insert(df.columns.get_loc("lat") + 1, "lng_wgs84",
+              [p[0] for p in wgs_list])               # 新列1：WGS-84 经度
+    df.insert(df.columns.get_loc("lat") + 2, "lat_wgs84",
+              [p[1] for p in wgs_list])               # 新列2：WGS-84 纬度
 
-df.to_csv(OUT_PATH, index=False, encoding="utf-8-sig")   # 写出（原列全保留）
-print(f"💾 已保存转换结果：{OUT_PATH}")
+    df.to_csv(OUT_PATH, index=False, encoding="utf-8-sig")   # 写出（原列全保留）
+    print(f"💾 已保存转换结果：{OUT_PATH}")
 
-# ========== 7. 打印转换前后对比样例（前 5 条） ==========
-print("\n==== 转换前后坐标对比（前 5 条） ====")
-for row in df.head().itertuples():                # 只取前 5 行展示
-    # 用近似公式估算偏移距离：纬度差×110.5km/度，经度差×cos(纬度)×111.3km/度
-    dy = (row.lat_wgs84 - row.lat) * 110540       # 南北方向偏移（米）
-    dx = (row.lng_wgs84 - row.lng) * 111320 * math.cos(math.radians(row.lat))
-    dist = math.hypot(dx, dy)                     # 合成水平偏移距离（米）
-    print(f"{row.name}")
-    print(f"  GCJ-02 : ({row.lng:.6f}, {row.lat:.6f})")
-    print(f"  WGS-84 : ({row.lng_wgs84:.6f}, {row.lat_wgs84:.6f})   "
-          f"偏移约 {dist:.0f} 米")
+    # ========== 7. 打印转换前后对比样例（前 5 条） ==========
+    print("\n==== 转换前后坐标对比（前 5 条） ====")
+    for row in df.head().itertuples():                # 只取前 5 行展示
+        # 用近似公式估算偏移距离：纬度差×110.5km/度，经度差×cos(纬度)×111.3km/度
+        dy = (row.lat_wgs84 - row.lat) * 110540       # 南北方向偏移（米）
+        dx = (row.lng_wgs84 - row.lng) * 111320 * math.cos(math.radians(row.lat))
+        dist = math.hypot(dx, dy)                     # 合成水平偏移距离（米）
+        print(f"{row.name}")
+        print(f"  GCJ-02 : ({row.lng:.6f}, {row.lat:.6f})")
+        print(f"  WGS-84 : ({row.lng_wgs84:.6f}, {row.lat_wgs84:.6f})   "
+              f"偏移约 {dist:.0f} 米")

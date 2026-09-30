@@ -1,0 +1,10 @@
+{"ts": "01:19:56", "event": "link2_filter", "ok": true, "county": "灵山县", "comp_range": [0.0244, 0.792], "n_before": 542, "n_after": 137}
+{"ts": "01:24:10", "event": "link1_map_click", "ok": true, "grid_id": "874150188ffffff", "lat": 21.950688152101726, "lng": 108.64929199218751}
+{"ts": "01:27:31", "event": "link3_chart_select", "ok": true, "county": "钦南区", "n_highlight": 172}
+{"ts": "13:04:45", "event": "link1_map_click", "ok": true, "grid_id": "87415058affffff", "lat": 22.284013600962453, "lng": 108.93160186183063}
+{"ts": "13:05:04", "event": "link1_map_click", "ok": true, "grid_id": "8741505a8ffffff", "lat": 22.223005383742795, "lng": 108.93709248009412}
+{"ts": "13:06:12", "event": "link2_filter", "ok": true, "county": "横州市", "comp_range": [0.0244, 0.792], "n_before": 542, "n_after": 97}
+{"ts": "13:06:27", "event": "link3_chart_select", "ok": true, "county": "钦南区", "n_highlight": 172}
+{"ts": "13:06:29", "event": "link3_chart_select", "ok": true, "county": "灵山县", "n_highlight": 137}
+{"ts": "13:06:30", "event": "link3_chart_select", "ok": true, "county": "横州市", "n_highlight": 97}
+{"ts": "13:06:31", "event": "link3_chart_select", "ok": true, "county": "钦北区", "n_highlight": 100}
