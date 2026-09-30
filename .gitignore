@@ -29,6 +29,7 @@ data/raw/*.pbf
 # 大体积可再生成数据不入库
 data/processed/poi_all.csv
 moat_pois_cache.json
+data/qdrant/
 
 
 # Shapefile 整套，不提交shp备用文件
