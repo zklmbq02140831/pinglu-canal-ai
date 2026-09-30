@@ -1,0 +1,73 @@
+{
+  "snapshot": "v2026-09",
+  "expected_count": 13,
+  "checks": [
+    {
+      "id": "count_close",
+      "name": "数量闭环",
+      "expected": 13,
+      "actual": {
+        "raw/headered": 13,
+        "docs_clean/txt": 13,
+        "docs_meta/json": 13,
+        "docs_catalog.json": 13
+      },
+      "pass": true
+    },
+    {
+      "id": "number_continuity",
+      "name": "编号连续性 01-13",
+      "missing": [],
+      "extra": [],
+      "pass": true
+    },
+    {
+      "id": "file_nonempty",
+      "name": "文件非空",
+      "empty_files": [],
+      "pass": true
+    },
+    {
+      "id": "meta_fields",
+      "name": "Meta 必填字段完整",
+      "required": [
+        "文件",
+        "发布机关",
+        "印发日期",
+        "文号"
+      ],
+      "missing_details": [],
+      "pass": true
+    },
+    {
+      "id": "catalog_meta_cross",
+      "name": "Catalog ↔ Meta 编号/标题交叉",
+      "mismatch_details": [],
+      "pass": true
+    },
+    {
+      "id": "clean_readable",
+      "name": "Clean txt 字数 ≥ 500",
+      "short_details": [],
+      "pass": true
+    },
+    {
+      "id": "raw_vs_clean",
+      "name": "Clean ≤ Raw 字数（去页眉只减不增）",
+      "inverted_details": [],
+      "pass": true
+    }
+  ],
+  "pass": true,
+  "summary": {
+    "total_checks": 7,
+    "passed": 7,
+    "failed": 0,
+    "counts": {
+      "raw/headered": 13,
+      "docs_clean/txt": 13,
+      "docs_meta/json": 13,
+      "docs_catalog.json": 13
+    }
+  }
+}
