@@ -179,15 +179,17 @@ def get_top_grids(n: int = 10, region: Optional[str] = None) -> dict[str, Any]:
 
     top = merged.sort_values("composite_index", ascending=False).head(n).copy()
     top["rank"] = range(1, len(top) + 1)
-    result = top[["rank", "hex_id", "county", "composite_index"]].apply(
-        lambda r: {
+    # 用 list comprehension 替代 apply(axis=1).tolist()
+    # 空 DataFrame 时 apply(axis=1) 返回 DataFrame 而非 Series，无 .tolist()
+    result = [
+        {
             "rank": int(r["rank"]),
             "hex_id": r["hex_id"],
             "county": r["county"] if pd.notna(r["county"]) else None,
             "composite_index": round(float(r["composite_index"]), 4),
-        },
-        axis=1,
-    ).tolist()
+        }
+        for _, r in top.iterrows()
+    ]
 
     return {
         "top_n": result,

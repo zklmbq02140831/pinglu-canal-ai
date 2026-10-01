@@ -7,6 +7,7 @@ frontend/app.py · 平陆运河多 Agent 智能问答系统 · Streamlit 演示�
 from __future__ import annotations
 
 import os
+import re
 import sys
 
 # —— 关键：把项目根目录加到 sys.path，否则 import src.* 会 ModuleNotFoundError ——
@@ -192,6 +193,39 @@ CUSTOM_CSS = """
     padding-top: 10px; margin-top: 14px;
     text-align: center;
 }
+
+/* ===== 侧边栏轻量按钮覆盖 ===== */
+button[kind="secondary"] {
+    border: 1px solid #D1D5DB !important;
+    background: #F9FAFB !important;
+    border-radius: 8px !important;
+    padding: 6px 12px !important;
+    font-size: 13px !important;
+    font-weight: 500 !important;
+    color: #374151 !important;
+    transition: all 0.15s ease !important;
+}
+button[kind="secondary"]:hover {
+    border-color: #2563EB !important;
+    background: #EFF6FF !important;
+    color: #1E5A8A !important;
+}
+
+/* ===== 事实锚定徽章（绿色） ===== */
+.anchor-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    background: #D1FAE5;
+    border: 1px solid #10B981;
+    color: #047857;
+    font-size: 11px;
+    font-weight: 600;
+    padding: 2px 10px;
+    border-radius: 12px;
+    margin-bottom: 8px;
+    letter-spacing: 0.3px;
+}
 </style>
 """
 st.markdown(CUSTOM_CSS, unsafe_allow_html=True)
@@ -213,22 +247,10 @@ with st.sidebar:
         unsafe_allow_html=True,
     )
 
-    # 架构说明
-    st.markdown(
-        """
-        <div style="font-size:12px;color:#6B7280;margin-bottom:12px">
-            <b>三层架构</b><br>
-            RouterAgent ─┬─→ IndexAgent（空间分析）<br>
-            &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;└─→ PolicyAgent（政策 RAG）
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
-
     st.divider()
 
-    # 演示预置按钮区（带 emoji）
-    st.markdown("### 🎯 演示预置场景")
+    # 快捷提问按钮区（轻量样式）
+    st.markdown("### 💡 快捷提问")
 
     # key 保持稳定（用 label 的简短 key），显示 label 带 emoji
     _PRESETS = [
@@ -240,16 +262,28 @@ with st.sidebar:
     ]
 
     for label, key, q in _PRESETS:
-        if st.button(label, key=key, use_container_width=True):
+        if st.button(label, key=key, use_container_width=True, type="secondary"):
             st.session_state["pending_question"] = q
             st.rerun()
 
-    # 底部数据口径
-    st.markdown(
-        '<div class="sidebar-footnote">📚 13 份政策文档 · 232 chunks<br>'
-        '阈值 0.45 · 离线只读</div>',
-        unsafe_allow_html=True,
-    )
+    st.divider()
+
+    # 关于本系统折叠器（默认收起）
+    with st.expander("ℹ️ 关于本系统", expanded=False):
+        st.markdown(
+            """
+            **系统架构**
+
+            RouterAgent 意图路由 → IndexAgent 空间分析 / PolicyAgent 政策 RAG
+
+            ---
+
+            **数据口径**
+            - 📦 snapshot = `v2026-09`（离线只读）
+            - 📚 13 份政策文档 · 232 chunks
+            - 🎯 向量检索阈值 `0.45`（Cosine）
+            """
+        )
 
 
 # =========================================================================
@@ -322,7 +356,14 @@ if question:
 
         # —— 答案正文（unknown 场景去重：兜底文案与蓝框重复，跳过）——
         if intent != "unknown":
-            st.markdown(answer)
+            # 正则剥离 [事实锚定·本地快照] 前缀（可能出现多次）
+            original_answer = answer
+            cleaned_answer = re.sub(r"\[事实锚定·本地快照\]\s*", "", answer)
+            has_anchor_tag = cleaned_answer != original_answer
+            # 渲染绿色徽章（独立标签，不混正文）
+            if has_anchor_tag:
+                st.markdown('<div class="anchor-badge">📌 事实锚定</div>', unsafe_allow_html=True)
+            st.markdown(cleaned_answer)
 
         # —— intent=unknown 蓝框提示 ——
         if intent == "unknown":
@@ -335,26 +376,64 @@ if question:
         coords_list = result.get("coords", [])
         if coords_list:
             import pandas as pd
+            import pydeck as pdk
 
             map_df = pd.DataFrame([
                 {"lat": c["lat"], "lon": c["lon"], "label": c.get("name", "")}
                 for c in coords_list
             ])
             st.markdown("🗺️ **平陆运河关键点位（真实坐标）**")
-            # zoom=8 适合 134km 跨度的起点-终点双点展示
-            st.map(map_df, latitude="lat", longitude="lon", zoom=8, height=380)
-            # st.map 不支持点标签，用 caption 手动标识起终点
-            icon_map = {"起点": "🟢 起点", "终点": "🔴 终点"}
-            label_parts = []
+
+            # pydeck ScatterplotLayer：起点绿 / 终点红
+            colors = []
+            for lbl in map_df["label"]:
+                if "起点" in str(lbl):
+                    colors.append([16, 185, 129])   # 绿 #10B981
+                elif "终点" in str(lbl):
+                    colors.append([239, 68, 68])    # 红 #EF4444
+                else:
+                    colors.append([37, 99, 235])    # 蓝 #2563EB（其他）
+            map_df["color"] = colors
+
+            # 地图视野：以起终点中点为中心，zoom=8
+            view_lat = map_df["lat"].mean()
+            view_lon = map_df["lon"].mean()
+
+            deck = pdk.Deck(
+                initial_view_state=pdk.ViewState(
+                    latitude=view_lat,
+                    longitude=view_lon,
+                    zoom=8,
+                    pitch=30,
+                ),
+                layers=[
+                    pdk.Layer(
+                        "ScatterplotLayer",
+                        data=map_df,
+                        get_position=["lon", "lat"],
+                        get_color="color",
+                        get_radius=8000,
+                        pickable=True,
+                        filled=True,
+                        stroked=True,
+                        line_width_min_pixels=2,
+                    ),
+                ],
+                tooltip={"text": "{label}\n经度: {lon}\n纬度: {lat}"},
+            )
+            st.pydeck_chart(deck, height=380)
+
+            # 图例（起终点颜色标识）
+            legend_items = []
             for _, row in map_df.iterrows():
                 lbl = str(row["label"])
-                matched_icon = None
-                for kw, icon in icon_map.items():
-                    if kw in lbl:
-                        matched_icon = icon
-                        break
-                label_parts.append(matched_icon or lbl)
-            st.caption(" → ".join(label_parts))
+                if "起点" in lbl:
+                    legend_items.append(f"🟢 {lbl}")
+                elif "终点" in lbl:
+                    legend_items.append(f"🔴 {lbl}")
+                else:
+                    legend_items.append(f"🔵 {lbl}")
+            st.caption(" · ".join(legend_items))
 
         # —— sources 卡片区（仅 policy intent 有值）——
         if sources:
