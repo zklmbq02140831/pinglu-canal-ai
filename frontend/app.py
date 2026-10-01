@@ -331,6 +331,31 @@ if question:
                 unsafe_allow_html=True,
             )
 
+        # —— 地图渲染（IndexAgent 命中运河事实时 coords 非空）——
+        coords_list = result.get("coords", [])
+        if coords_list:
+            import pandas as pd
+
+            map_df = pd.DataFrame([
+                {"lat": c["lat"], "lon": c["lon"], "label": c.get("name", "")}
+                for c in coords_list
+            ])
+            st.markdown("🗺️ **平陆运河关键点位（真实坐标）**")
+            # zoom=8 适合 134km 跨度的起点-终点双点展示
+            st.map(map_df, latitude="lat", longitude="lon", zoom=8, height=380)
+            # st.map 不支持点标签，用 caption 手动标识起终点
+            icon_map = {"起点": "🟢 起点", "终点": "🔴 终点"}
+            label_parts = []
+            for _, row in map_df.iterrows():
+                lbl = str(row["label"])
+                matched_icon = None
+                for kw, icon in icon_map.items():
+                    if kw in lbl:
+                        matched_icon = icon
+                        break
+                label_parts.append(matched_icon or lbl)
+            st.caption(" → ".join(label_parts))
+
         # —— sources 卡片区（仅 policy intent 有值）——
         if sources:
             st.markdown(f"📌 **政策依据（{len(sources)} 条）**")

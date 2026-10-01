@@ -71,6 +71,7 @@ def run(question: str) -> dict[str, Any]:
             "answer": downstream.get("answer", ""),
             "sources": [],
             "hex_ids": downstream.get("hex_ids", []),
+            "coords": downstream.get("coords", []),
             "agent_flow": ["Router", "IndexAgent"],
             "snapshot": downstream.get("snapshot", "v2026-09"),
         })
@@ -83,6 +84,7 @@ def run(question: str) -> dict[str, Any]:
             "answer": downstream.get("answer", ""),
             "sources": downstream.get("sources", []),
             "hex_ids": [],
+            "coords": [],
             "agent_flow": ["Router", "PolicyAgent"],
             "snapshot": downstream.get("snapshot", "v2026-09"),
         })
@@ -92,6 +94,7 @@ def run(question: str) -> dict[str, Any]:
             "answer": "该问题超出本系统范围,请咨询空间或政策相关问题",
             "sources": [],
             "hex_ids": [],
+            "coords": [],
             "agent_flow": ["Router"],
             "snapshot": "v2026-09",
         })

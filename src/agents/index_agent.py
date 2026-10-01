@@ -260,15 +260,19 @@ def _read_zhipu_key() -> str:
             or fallback)
 
 
-SYSTEM_PROMPT = """你是平陆运河经济带空间分析专员，只负责回答产业指数、网格排名类问题。
-回答简洁专业，数字带单位，末尾提示"已为您定位到地图"。
+SYSTEM_PROMPT = """你是平陆运河经济带空间分析专员，只负责回答产业指数、网格排名、运河基本事实三类问题。
+回答简洁专业，数字带单位。
 
 背景格局（数字以工具查询结果为准，不背诵不扩展）：
 - 指数呈港-城双核、中间塌陷结构；
 - 运河城区段存在贴河低值凹槽条带（Gi*显著冷点，13格）；
 - 条带以生活岸线为主、工业底色淡，含少量仓储锚点，通航后填空潜力大。
 
-**铁律：涉及任何具体数字、hex_id、排名、密度、范围的问题，必须先调用相应工具查询，禁止凭背景知识或记忆直接作答。** 只有定性/方向性问题（如"哪里有潜力"）可直接引用上述背景。
+**铁律1（数据工具）：** 涉及任何具体数字、hex_id、排名、密度、范围的问题，必须先调用相应工具（get_index / get_top_grids / get_coldspots）查询，禁止凭背景知识或记忆直接作答。只有定性/方向性问题（如"哪里有潜力"）可直接引用上述背景。
+
+**铁律2（运河事实锚定）：** 涉及运河基本事实（起点/终点坐标、全长、落差、通航等级、总投资、三大枢纽、开工时间、首航时间、概况、介绍、是什么等），**必须先调用 get_canal_fact 工具查询确定性常量表，禁止凭记忆或背景知识直接回答**。
+
+**铁律3（话术诚实）：** 严禁宣称任何未执行的操作。系统渲染地图由前端决定，你只需输出正确数据即可——禁止主动说"已为您定位到地图"或"已在地图上标注"等话术。
 
 只陈述事实，不推断因果。
 """
@@ -276,12 +280,15 @@ SYSTEM_PROMPT = """你是平陆运河经济带空间分析专员，只负责回�
 
 def build_agent():
     """
-    构建 LangGraph ReAct Agent，绑定三个本地工具。
+    构建 LangGraph ReAct Agent，绑定四个本地工具。
     使用 langgraph.prebuilt.create_react_agent → 自动处理 tool-call 循环。
+    工具：get_index / get_top_grids / get_coldspots / get_canal_fact。
     """
     from langchain_core.tools import tool
     from langchain_openai import ChatOpenAI
     from langgraph.prebuilt import create_react_agent
+
+    from src.agents.canal_facts import query_fact as _query_fact
 
     zhipu_key = _read_zhipu_key()
     if not zhipu_key:
@@ -296,7 +303,7 @@ def build_agent():
         temperature=0.2,
     )
 
-    # —— 三个 LangChain Tool（用 @tool 装饰，自动生成 schema 给 LLM）——
+    # —— 四个 LangChain Tool（用 @tool 装饰，自动生成 schema 给 LLM）——
     @tool
     def tool_get_index(hex_id: str) -> str:
         """查询指定 H3 res7 网格（hex_id，形如 '874150188ffffff'）的五维指标和综合指数。"""
@@ -312,7 +319,16 @@ def build_agent():
         """返回凹槽条带 13 格的黄金清单：hex_id / 街道 / composite_index / 距运河距离 km。共13格，Day13锁定。"""
         return json.dumps(get_coldspots(), ensure_ascii=False)
 
-    tools = [tool_get_index, tool_get_top_grids, tool_get_coldspots]
+    @tool
+    def tool_get_canal_fact(keyword: str) -> str:
+        """
+        查询平陆运河确定性基本事实（锚定常量表，零幻觉）。
+        keyword 可为: 起点/终点/坐标/经纬度/全长/长度/落差/通航/吨位/投资/枢纽/开工/首航/建成/概况/介绍。
+        返回含 coords 字段时表示有可在地图上标注的坐标点。
+        """
+        return json.dumps(_query_fact(keyword), ensure_ascii=False)
+
+    tools = [tool_get_index, tool_get_top_grids, tool_get_coldspots, tool_get_canal_fact]
 
     agent = create_react_agent(
         model=llm,
@@ -325,14 +341,18 @@ def build_agent():
 # =========================================================================
 # 3.5 兜底：检测数字问题后主动拉取真实工具数据注入 answer
 # =========================================================================
-def _proactive_fetch(question: str) -> Optional[tuple[str, list[str]]]:
+def _proactive_fetch(question: str) -> Optional[tuple[str, list[str], list[dict[str, Any]]]]:
     """
-    当 LLM 未调工具但问题明显是数字查询时，主动调相应工具，
-    用真实数据修正 answer 并收集 hex_ids。
-    返回 (修正后的 answer, 新增 hex_ids 列表)；无需兜底则返回 None。
+    当 LLM 未调工具但问题明显是数字查询或运河事实查询时，主动调相应工具，
+    用真实数据修正 answer 并收集 hex_ids / coords。
+    返回 (修正后的 answer, 新增 hex_ids 列表, coords 列表)；无需兜底则返回 None。
+    注：canal_facts 的调用不产生 hex_ids 但产生 coords。
     """
+    from src.agents.canal_facts import query_fact as _query_fact
+
     new_parts: list[str] = []
     extra_hex: list[str] = []
+    extra_coords: list[dict[str, Any]] = []
 
     # —— 场景 1：问题涉及 "冷点 / 凹槽 / 条带 / 13格" → 注入 get_coldspots() ——
     cold_keywords = ("冷点", "凹槽", "条带", "13格", "13 个")
@@ -362,15 +382,68 @@ def _proactive_fetch(question: str) -> Optional[tuple[str, list[str]]]:
             f"({top1['county']})，composite={top1['composite_index']:.4f}。"
         )
 
+    # —— 场景 3：运河基本事实关键词 → 注入 canal_facts 确定性常量表 ——
+    # 这是"连点3次结果一致"的 determinism 安全网：temperature=0.2 不保证 LLM 每次都调工具
+    canal_fact_keywords = (
+        "起点", "终点", "坐标", "经纬度", "经度", "纬度",
+        "全长", "长度", "落差", "通航", "吨位", "投资", "枢纽", "船闸",
+        "开工", "首航", "通航时间", "建成", "完工",
+        "概况", "介绍", "是什么", "基本信息",
+        "平塘江口", "北部湾", "郁江",
+    )
+    if any(k in question for k in canal_fact_keywords):
+        cf = _query_fact(question)
+        # 收集 coords（如果有）
+        if cf.get("coords"):
+            extra_coords.extend(cf["coords"])
+
+        mk = cf.get("matched_key")
+        val = cf.get("value")
+        if mk is None or val is None:
+            pass  # 常量表无匹配，跳过，让 LLM 自己回答（不会编造坐标因为有 SYSTEM_PROMPT 铁律2）
+        elif mk == "坐标":
+            # 同时命中坐标
+            start_v = val.get("起点", {})
+            end_v = val.get("终点", {})
+            new_parts.append(
+                f"[事实锚定·本地快照] 平陆运河起点 {start_v.get('lon_rounded', start_v.get('lon'))}°E, "
+                f"{start_v.get('lat_rounded', start_v.get('lat'))}°N "
+                f"（{start_v.get('location', '')}）；"
+                f"终点 {end_v.get('lon_rounded', end_v.get('lon'))}°E, "
+                f"{end_v.get('lat_rounded', end_v.get('lat'))}°N。"
+            )
+        elif mk in ("起点", "终点") and isinstance(val, dict) and "lon" in val:
+            # 单独命中起点或终点
+            new_parts.append(
+                f"[事实锚定·本地快照] {val.get('name', mk)}："
+                f"{val.get('lon_rounded', val.get('lon'))}°E, "
+                f"{val.get('lat_rounded', val.get('lat'))}°N"
+                f"（{val.get('location', '')}）。"
+            )
+        elif isinstance(val, dict) and "text" in val:
+            # 有 .text 的条目（概况 / 全长 / 落差 / 通航等级 / 总投资 / 开工 / 首航 / 建成）
+            new_parts.append(f"[事实锚定·本地快照] {val['text']}。")
+        elif mk == "枢纽" and isinstance(val, dict) and "list" in val:
+            names = "、".join([h["name"] for h in val["list"]])
+            new_parts.append(f"[事实锚定·本地快照] 平陆运河设 {val['count']} 大枢纽：{names}。")
+
     if not new_parts:
         return None
 
     # 去重 hex
-    seen = set()
-    extra_hex = [h for h in extra_hex if not (h in seen or seen.add(h))]
+    seen_hex = set()
+    extra_hex = [h for h in extra_hex if not (h in seen_hex or seen_hex.add(h))]
+    # 去重 coords（按 lon+lat 二元组）
+    seen_coords = set()
+    dedup_coords: list[dict[str, Any]] = []
+    for c in extra_coords:
+        key = (round(c.get("lon", 0), 5), round(c.get("lat", 0), 5))
+        if key not in seen_coords:
+            seen_coords.add(key)
+            dedup_coords.append(c)
 
     # 拼接：先放原 answer，再接兜底数据块
-    return (" ".join(new_parts), extra_hex)
+    return (" ".join(new_parts), extra_hex, dedup_coords)
 
 
 # =========================================================================
@@ -398,6 +471,8 @@ def run(question: str, agent=None) -> dict[str, Any]:
 
     # 从工具调用中提取涉及的 hex_ids（用于前端地图联动高亮）
     hex_ids: List[str] = []
+    # 从工具调用中提取 coords（canal_facts 返回，用于 st.map 渲染）
+    coords: list[dict[str, Any]] = []
     for msg in messages:
         # tool_call 参数里可能含 hex_id
         if hasattr(msg, "tool_calls"):
@@ -410,7 +485,7 @@ def run(question: str, agent=None) -> dict[str, Any]:
                         args = {}
                 if "hex_id" in args:
                     hex_ids.append(args["hex_id"])
-        # ToolMessage 内容里解析出 hex_id
+        # ToolMessage 内容里解析出 hex_id / coords
         if getattr(msg, "type", None) == "tool":
             try:
                 content = msg.content if hasattr(msg, "content") else str(msg)
@@ -426,32 +501,67 @@ def run(question: str, agent=None) -> dict[str, Any]:
                         for g in data["top_n"]:
                             if "hex_id" in g:
                                 hex_ids.append(g["hex_id"])
+                    # canal_facts 返回的 coords
+                    if "coords" in data and isinstance(data["coords"], list):
+                        coords.extend(data["coords"])
             except Exception:
                 pass
 
-    # 去重保序
-    seen = set()
-    hex_ids = [h for h in hex_ids if not (h in seen or seen.add(h))]
+    # 去重保序（hex_ids + coords 分别去重）
+    seen_h: set[str] = set()
+    hex_ids = [h for h in hex_ids if not (h in seen_h or seen_h.add(h))]
+    seen_c: set[tuple[float, float]] = set()
+    dedup_coords: list[dict[str, Any]] = []
+    for c in coords:
+        key = (round(c.get("lon", 0), 5), round(c.get("lat", 0), 5))
+        if key not in seen_c:
+            seen_c.add(key)
+            dedup_coords.append(c)
+    coords = dedup_coords
 
-    # —— 兜底：LLM 没调工具但问题含数字关键词 → 主动调工具注入真实数据 ——
+    # —— 兜底：LLM 没调工具但问题含数字关键词或运河事实关键词 → 主动调工具注入真实数据 ——
     numeric_keywords = ("范围", "多少", "数值", "composite", "密度",
                         "排名", "前几", "几个", "总数", "有多少", "比例")
-    no_tool_but_numeric = (
+    canal_fact_keywords = (
+        "起点", "终点", "坐标", "经纬度", "经度", "纬度",
+        "全长", "长度", "落差", "通航", "吨位", "投资", "枢纽", "船闸",
+        "开工", "首航", "通航时间", "建成", "完工",
+        "概况", "介绍", "是什么", "基本信息",
+        "平塘江口", "北部湾", "郁江",
+    )
+    has_spatial_trigger = (
         not hex_ids
         and any(k.lower() in question.lower() for k in numeric_keywords)
     )
-    if no_tool_but_numeric:
+    has_canal_fact_trigger = any(k in question for k in canal_fact_keywords)
+    if has_spatial_trigger or has_canal_fact_trigger:
         injected = _proactive_fetch(question)
         if injected:
-            injected_text, extra_hex = injected
-            answer = answer.rstrip("。") + "；" + injected_text
+            injected_text, extra_hex, extra_coords = injected
+            # 如果 LLM 已有一些 answer（可能编造了错误坐标），用兜底数据覆盖/修正
+            if answer:
+                answer = injected_text  # 直接替换为确定性数据（消灭编造）
+            else:
+                answer = injected_text
             for h in extra_hex:
                 if h not in hex_ids:
                     hex_ids.append(h)
+            for c in extra_coords:
+                key = (round(c.get("lon", 0), 5), round(c.get("lat", 0), 5))
+                if key not in seen_c:
+                    seen_c.add(key)
+                    coords.append(c)
+
+    # —— 程序化追加地图标注话术（仅当有 coords 且 answer 里还没这句时）——
+    if coords:
+        map_tail = "（已在下方地图标注）"
+        if map_tail not in answer:
+            answer = answer.rstrip("。") + map_tail + "。"
 
     return {
         "answer": answer,
         "hex_ids": hex_ids,
+        "coords": coords,
         "agent_flow": ["IndexAgent"],
         "snapshot": SNAPSHOT,
     }
