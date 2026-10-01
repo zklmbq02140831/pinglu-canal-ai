@@ -276,61 +276,101 @@ st.markdown(CUSTOM_CSS, unsafe_allow_html=True)
 # 侧边栏
 # =========================================================================
 # =========================================================================
-# 底图源配置（仅标准 / 卫星可用；天地图需 TIANDITU_KEY 才启用）
+# 底图源配置（仅标准 / 卫星默认可见；天地图需 TIANDITU_KEY 才启用）
 # pydeck 渲染自定义 XYZ 瓦片：将瓦片 URL 转为 mapbox raster 样式 JSON
 # 字符串，通过 map_style 传给 Deck —— 这是 deck.gl 9.x 唯一能正确渲染
 # 自定义 XYZ 瓦片的方式（TileLayer 在此版本的 pydeck+Streamlit 组合
 # 中会被错误地序列化为 GeoJsonLayer）。
+#
+# 每个底图值为 (底图URL, 注记层URL) 元组；注记层为空字符串表示无叠加。
+# 注记层 URL 与底图使用同一份 z/y/x 模板占位符。
 # =========================================================================
 _BASEMAP_OPTIONS = {
-    "标准地图": "https://tile.openstreetmap.org/{z}/{x}/{y}.png",
-    "卫星影像": "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
+    # 默认：Esri World Street Map（国内可达，XYZ 瓦片，{z}/{y}/{x} 顺序）
+    "标准地图": (
+        "https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}",
+        "",
+    ),
+    # 卫星影像：Esri World Imagery（保持现状，已验证可用）
+    "卫星影像": (
+        "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
+        "",
+    ),
 }
 
-# 天地图（条件启用）
+# 天地图（条件启用，需要 .env 中配置 TIANDITU_KEY）
 _TIANDITU_KEY = os.environ.get("TIANDITU_KEY", "")
 _HAS_TIANDITU = bool(_TIANDITU_KEY)
 if _HAS_TIANDITU:
+    _BASEMAP_OPTIONS["天地图标准"] = (
+        f"https://t0.tianditu.gov.cn/DataServer?T=vec_w&x={{x}}&y={{y}}&l={{z}}&tk={_TIANDITU_KEY}",
+        f"https://t0.tianditu.gov.cn/DataServer?T=cva_w&x={{x}}&y={{y}}&l={{z}}&tk={_TIANDITU_KEY}",
+    )
     _BASEMAP_OPTIONS["天地图影像"] = (
-        f"https://t{sorted(list('01234567'))[0]}.tianditu.gov.cn/img_w/wmts?"
-        f"SERVICE=WMTS&REQUEST=GetTile&VERSION=1.0.0&LAYER=img&STYLE=default&"
-        f"TILEMATRIXSET=w&FORMAT=tiles&TILEMATRIX={{z}}&TILEROW={{y}}&TILECOL={{x}}&"
-        f"tk={_TIANDITU_KEY}"
+        f"https://t0.tianditu.gov.cn/DataServer?T=img_w&x={{x}}&y={{y}}&l={{z}}&tk={_TIANDITU_KEY}",
+        f"https://t0.tianditu.gov.cn/DataServer?T=cva_w&x={{x}}&y={{y}}&l={{z}}&tk={_TIANDITU_KEY}",
     )
 
 
-def _tile_url_to_mapstyle(tile_url: str) -> str:
-    """将 XYZ 瓦片模板 URL 转为 data:application/json;base64, 形式的 mapbox raster 样式。
+def _tile_url_to_mapstyle(tile_url: str, annot_url: str = "") -> str:
+    """将 XYZ 瓦片模板 URL (及可选注记层 URL) 转为 data:application/json;base64,
+    形式的 mapbox raster 样式字符串。
 
     为什么：deck.gl 9.x 的 DeckGL 组件要求 mapStyle 为字符串；
     普通 mapbox 样式 JSON 字符串若包含 http:// 会被误判为 URL 去 fetch，
     dict 又会在 JS 端触发 e.mapStyle?.includes is not a function；
     data URI 是唯一能让 deck.gl 正确识别为内联样式的方式。
+
+    annot_url：可选的注记层瓦片 URL（如天地图 cva_w / cia_w 中文注记），
+    若非空则叠加一个 source+layer 在底图之上。
     """
     import base64 as _b64
     import json as _json
-    style = {
-        "version": 8,
-        "sources": {
-            "custom-tiles": {
-                "type": "raster",
-                "tiles": [tile_url],
-                "tileSize": 256,
-            }
-        },
-        "layers": [
-            {
-                "id": "custom-tiles",
-                "type": "raster",
-                "source": "custom-tiles",
-                "minzoom": 0,
-                "maxzoom": 19,
-            }
-        ],
+
+    sources = {
+        "custom-tiles": {
+            "type": "raster",
+            "tiles": [tile_url],
+            "tileSize": 256,
+        }
     }
+    layers = [
+        {
+            "id": "custom-tiles",
+            "type": "raster",
+            "source": "custom-tiles",
+            "minzoom": 0,
+            "maxzoom": 19,
+        }
+    ]
+
+    if annot_url:
+        sources["annot-tiles"] = {
+            "type": "raster",
+            "tiles": [annot_url],
+            "tileSize": 256,
+        }
+        layers.append({
+            "id": "annot-tiles",
+            "type": "raster",
+            "source": "annot-tiles",
+            "minzoom": 0,
+            "maxzoom": 19,
+        })
+
+    style = {"version": 8, "sources": sources, "layers": layers}
     json_str = _json.dumps(style)
     b64 = _b64.b64encode(json_str.encode("utf-8")).decode("ascii")
     return f"data:application/json;base64,{b64}"
+
+
+def _resolve_basemap_style(label: str) -> str:
+    """根据底图标签查找 (底图URL, 注记层URL) 元组并生成 map_style。"""
+    _entry = _BASEMAP_OPTIONS.get(label, _BASEMAP_OPTIONS["标准地图"])
+    if isinstance(_entry, tuple):
+        return _tile_url_to_mapstyle(_entry[0], _entry[1])
+    # 兼容旧格式（纯字符串）—— 保险兜底
+    return _tile_url_to_mapstyle(_entry)
 
 
 with st.sidebar:
@@ -360,7 +400,7 @@ with st.sidebar:
         key="basemap_selector",
         label_visibility="collapsed",
     )
-    st.session_state["selected_basemap_url"] = _BASEMAP_OPTIONS[_selected_basemap_label]
+    st.session_state["selected_basemap_label"] = _selected_basemap_label
 
     st.divider()
 
@@ -470,8 +510,9 @@ if _any_route_checked:
 
         if _sel_features:
             # —— 准备 PathLayer 数据（[[lon,lat]...] 序列）——
+            import math as _math
             _path_rows = []
-            _endpoint_rows = []  # 端点（起终点 + 路径末端）
+            _endpoint_rows = []  # 端点（起终点）
             for _feat in _sel_features:
                 _coords = _feat["geometry"]["coordinates"]  # [[lon,lat], ...]
                 _col_hex = _feat["properties"]["color"]
@@ -480,42 +521,51 @@ if _any_route_checked:
                     int(_col_hex[3:5], 16),
                     int(_col_hex[5:7], 16),
                 ]
-                # PathLayer 字段：path（序列）+ color
+                _feat_name = _feat["properties"]["name"]
+                _feat_mode = _feat["properties"]["mode"]
+                # PathLayer 字段：path + name + mode（tooltip 复用）+ color
                 _path_rows.append({
                     "path": _coords,
-                    "name": _feat["properties"]["name"],
-                    "mode": _feat["properties"]["mode"],
+                    "name": _feat_name,
+                    "mode": _feat_mode,
                     "color": _col_rgb,
                 })
-                # 端点：每个路径的起点 + 终点
+                # 端点：每个路径的起点 + 终点；补齐 name/mode 供 tooltip 复用
                 _start = _coords[0]
                 _end = _coords[-1]
                 _endpoint_rows.append({
                     "lon": _start[0], "lat": _start[1],
-                    "label": f"{_feat['properties']['name']}（起点）",
+                    "name": f"{_feat_name}（起点）",
+                    "mode": _feat_mode,
                     "color": _col_rgb,
                 })
                 _endpoint_rows.append({
                     "lon": _end[0], "lat": _end[1],
-                    "label": f"{_feat['properties']['name']}（终点）",
+                    "name": f"{_feat_name}（终点）",
+                    "mode": _feat_mode,
                     "color": _col_rgb,
                 })
 
-            # —— 地图视野：覆盖所有路径的经纬度边界框 ——
+            # —— 视野自适应：覆盖所有可见路径的包围盒 ——
             _all_lons = []
             _all_lats = []
             for _feat in _sel_features:
                 for _c in _feat["geometry"]["coordinates"]:
                     _all_lons.append(_c[0])
                     _all_lats.append(_c[1])
-            _view_lon = (min(_all_lons) + max(_all_lons)) / 2
-            _view_lat = (min(_all_lats) + max(_all_lats)) / 2
-            # 中国-东南亚范围足够大，zoom=4 即可覆盖
-            _view_zoom = 4
+            _min_lon, _max_lon = min(_all_lons), max(_all_lons)
+            _min_lat, _max_lat = min(_all_lats), max(_all_lats)
+            _view_lon = (_min_lon + _max_lon) / 2
+            _view_lat = (_min_lat + _max_lat) / 2
+            _lon_span = max(_max_lon - _min_lon, 0.5)
+            _lat_span = max(_max_lat - _min_lat, 0.5)
+            _zoom_lon = _math.log2(360.0 / _lon_span) - 1
+            _zoom_lat = _math.log2(180.0 / _lat_span) - 1
+            _view_zoom = max(min(_zoom_lon, _zoom_lat), 2.5)
 
-            # —— 共享底图：mapbox raster 样式 dict（map_provider='mapbox' 配合使用）——
-            _bm_url = st.session_state.get("selected_basemap_url", _BASEMAP_OPTIONS["标准地图"])
-            _map_style = _tile_url_to_mapstyle(_bm_url)
+            # —— 共享底图：根据 selected_basemap_label 生成 map_style ——
+            _bm_label = st.session_state.get("selected_basemap_label", "标准地图")
+            _map_style = _resolve_basemap_style(_bm_label)
 
             # —— PathLayer ——
             _path_layer = pdk.Layer(
@@ -555,7 +605,18 @@ if _any_route_checked:
                     pitch=0,
                 ),
                 layers=[_path_layer, _ep_layer],
-                tooltip={"text": "{label}"},
+                tooltip={
+                    "html": "<b>{name}</b>（{mode}）",
+                    "style": {
+                        "backgroundColor": "#ffffff",
+                        "color": "#000000",
+                        "border": "1px solid #d1d5db",
+                        "borderRadius": "4px",
+                        "padding": "8px",
+                        "fontFamily": "sans-serif",
+                        "fontSize": "13px",
+                    },
+                },
             )
 
             st.markdown("🚢 **陆海物流路径演示（示意）**")
@@ -703,9 +764,9 @@ if question:
             view_lat = map_df["lat"].mean()
             view_lon = map_df["lon"].mean()
 
-            # —— 共享底图：mapbox raster 样式 dict（map_provider='mapbox' 配合使用）——
-            _bm_url = st.session_state.get("selected_basemap_url", _BASEMAP_OPTIONS["标准地图"])
-            _map_style = _tile_url_to_mapstyle(_bm_url)
+            # —— 共享底图：根据 selected_basemap_label 生成 map_style ——
+            _bm_label = st.session_state.get("selected_basemap_label", "标准地图")
+            _map_style = _resolve_basemap_style(_bm_label)
 
             deck = pdk.Deck(
                 map_provider="mapbox",
