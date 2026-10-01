@@ -33,7 +33,7 @@ def _get_orchestrator():
 # 页面配置
 # =========================================================================
 st.set_page_config(
-    page_title="平陆运河多Agent智能问答系统",
+    page_title="智汇运河 · 平陆运河多智能体决策支持平台",
     page_icon="🚢",
     layout="wide",
     initial_sidebar_state="expanded",
@@ -275,18 +275,77 @@ st.markdown(CUSTOM_CSS, unsafe_allow_html=True)
 # =========================================================================
 # 侧边栏
 # =========================================================================
+# =========================================================================
+# 底图源配置（仅标准 / 卫星可用；天地图需 TIANDITU_KEY 才启用）
+# =========================================================================
+_BASEMAP_OPTIONS = {
+    "标准地图": "https://tile.openstreetmap.org/{z}/{x}/{y}.png",
+    "卫星影像": "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
+}
+
+# 天地图（条件启用）
+_TIANDITU_KEY = os.environ.get("TIANDITU_KEY", "")
+_HAS_TIANDITU = bool(_TIANDITU_KEY)
+if _HAS_TIANDITU:
+    # 底图 + 注记组合（pydeck TileLayer 不支持多图层叠加的注记，
+    # 这里仅用 img_w 底图 + cva_w 注记 URL 作为两个 TileLayer 共享 key）
+    _BASEMAP_OPTIONS["天地图影像"] = (
+        f"https://t{sorted(list('01234567'))[0]}.tianditu.gov.cn/img_w/wmts?"
+        f"SERVICE=WMTS&REQUEST=GetTile&VERSION=1.0.0&LAYER=img&STYLE=default&"
+        f"TILEMATRIXSET=w&FORMAT=tiles&TILEMATRIX={{z}}&TILEROW={{y}}&TILECOL={{x}}&"
+        f"tk={_TIANDITU_KEY}"
+    )
+
+
 with st.sidebar:
     # 系统信息小卡
     st.markdown(
         """
         <div class="sys-card">
-            <div class="sys-card-title">🚢 平陆运河</div>
-            <div class="sys-card-item">多 Agent 智能问答系统</div>
+            <div class="sys-card-title">🚢 智汇运河</div>
+            <div class="sys-card-item">多智能体决策支持与空间智能平台</div>
             <div class="sys-card-item">📦 snapshot = <b>v2026-09</b></div>
         </div>
         """,
         unsafe_allow_html=True,
     )
+
+    st.divider()
+
+    # —— 底图选择器 ——
+    st.markdown("🗺️ **底图切换**")
+    _bm_labels = list(_BASEMAP_OPTIONS.keys())
+    _default_idx = 0
+    _selected_basemap_label = st.radio(
+        "底图",
+        _bm_labels,
+        index=_default_idx,
+        horizontal=True,
+        key="basemap_selector",
+        label_visibility="collapsed",
+    )
+    st.session_state["selected_basemap_url"] = _BASEMAP_OPTIONS[_selected_basemap_label]
+
+    st.divider()
+
+    # —— 陆海物流路径演示 ——
+    with st.expander("🚢 陆海物流路径演示", expanded=False):
+        st.markdown("勾选下列路线，地图将叠加示意线路（WGS84 坐标）")
+        st.markdown("")
+
+        # 4 条路线复选框（key 稳定，与 geojson 顺序对齐）
+        _ROUTE_CHECKBOXES = [
+            ("钦州港 → 南宁 → 贵阳（陆路·蓝）",   "route_guiyang",   "#2563EB"),
+            ("钦州港 → 南宁 → 成都（陆路·橙）",   "route_chengdu",  "#EA580C"),
+            ("钦州港 → 南宁 → 昆明（陆路·紫）",   "route_kunming",   "#7C3AED"),
+            ("钦州港 → 海上 → 新加坡港（海运·绿）", "route_singapore", "#059669"),
+        ]
+        _checked_routes = {}
+        for label, key, color in _ROUTE_CHECKBOXES:
+            _checked_routes[key] = st.checkbox(label, key=key, value=False)
+
+        # 把勾选状态缓存到 session_state 供主渲染块读取
+        st.session_state["route_selection"] = _checked_routes
 
     st.divider()
 
@@ -334,12 +393,152 @@ st.markdown(
     """
     <div class="hero-banner">
         <div class="hero-snapshot">📦 snapshot = v2026-09</div>
-        <div class="hero-title">平陆运河多Agent智能问答系统</div>
-        <div class="hero-subtitle">基于 LangGraph + 智谱 GLM-4-Flash 的空间-政策协同问答</div>
+        <div class="hero-title">智汇运河</div>
+        <div class="hero-subtitle">面向中国-东盟陆海联动的多智能体决策支持与空间智能平台</div>
     </div>
     """,
     unsafe_allow_html=True,
 )
+
+
+# =========================================================================
+# 主区 · 陆海物流路径演示地图（独立于问答流，勾选即显示）
+# =========================================================================
+_route_selection = st.session_state.get("route_selection", {})
+_any_route_checked = any(_route_selection.values())
+
+if _any_route_checked:
+    import json as _json
+    import pydeck as pdk
+    from pathlib import Path as _P
+
+    # geojson 路径：frontend/data/routes.geojson
+    _geojson_path = _P(__file__).resolve().parent / "data" / "routes.geojson"
+
+    # key 与侧边栏 _ROUTE_CHECKBOXES 顺序严格对齐 → feature 序号
+    _KEY_TO_FIDX = {
+        "route_guiyang": 0,
+        "route_chengdu": 1,
+        "route_kunming": 2,
+        "route_singapore": 3,
+    }
+
+    try:
+        with open(_geojson_path, "r", encoding="utf-8") as _f:
+            _fc = _json.load(_f)
+
+        _sel_features = []
+        for _ck, _idx in _KEY_TO_FIDX.items():
+            if _route_selection.get(_ck):
+                _sel_features.append(_fc["features"][_idx])
+
+        if _sel_features:
+            # —— 准备 PathLayer 数据（[[lon,lat]...] 序列）——
+            _path_rows = []
+            _endpoint_rows = []  # 端点（起终点 + 路径末端）
+            for _feat in _sel_features:
+                _coords = _feat["geometry"]["coordinates"]  # [[lon,lat], ...]
+                _col_hex = _feat["properties"]["color"]
+                _col_rgb = [
+                    int(_col_hex[1:3], 16),
+                    int(_col_hex[3:5], 16),
+                    int(_col_hex[5:7], 16),
+                ]
+                # PathLayer 字段：path（序列）+ color
+                _path_rows.append({
+                    "path": _coords,
+                    "name": _feat["properties"]["name"],
+                    "mode": _feat["properties"]["mode"],
+                    "color": _col_rgb,
+                })
+                # 端点：每个路径的起点 + 终点
+                _start = _coords[0]
+                _end = _coords[-1]
+                _endpoint_rows.append({
+                    "lon": _start[0], "lat": _start[1],
+                    "label": f"{_feat['properties']['name']}（起点）",
+                    "color": _col_rgb,
+                })
+                _endpoint_rows.append({
+                    "lon": _end[0], "lat": _end[1],
+                    "label": f"{_feat['properties']['name']}（终点）",
+                    "color": _col_rgb,
+                })
+
+            # —— 地图视野：覆盖所有路径的经纬度边界框 ——
+            _all_lons = []
+            _all_lats = []
+            for _feat in _sel_features:
+                for _c in _feat["geometry"]["coordinates"]:
+                    _all_lons.append(_c[0])
+                    _all_lats.append(_c[1])
+            _view_lon = (min(_all_lons) + max(_all_lons)) / 2
+            _view_lat = (min(_all_lats) + max(_all_lats)) / 2
+            # 中国-东南亚范围足够大，zoom=4 即可覆盖
+            _view_zoom = 4
+
+            # —— 共享底图 TileLayer ——
+            _bm_url = st.session_state.get("selected_basemap_url", _BASEMAP_OPTIONS["标准地图"])
+            _tile_layer = pdk.Layer(
+                "TileLayer",
+                data=_bm_url,
+                min_zoom=0,
+                max_zoom=19,
+                tile_size=256,
+                opacity=1.0,
+            )
+
+            # —— PathLayer ——
+            _path_layer = pdk.Layer(
+                "PathLayer",
+                data=_path_rows,
+                get_path="path",
+                get_color="color",
+                width_min_pixels=3,
+                width_max_pixels=8,
+                get_width=5,
+                rounded=True,
+                pickable=True,
+            )
+
+            # —— 端点 ScatterplotLayer ——
+            _ep_layer = pdk.Layer(
+                "ScatterplotLayer",
+                data=_endpoint_rows,
+                get_position=["lon", "lat"],
+                get_color="color",
+                get_radius=20000,
+                radius_min_pixels=5,
+                radius_max_pixels=12,
+                pickable=True,
+                filled=True,
+                stroked=True,
+                line_width_min_pixels=1,
+            )
+
+            _route_deck = pdk.Deck(
+                map_provider=None,   # 关闭 pydeck 默认 basemap，用 TileLayer 自绘
+                initial_view_state=pdk.ViewState(
+                    latitude=_view_lat,
+                    longitude=_view_lon,
+                    zoom=_view_zoom,
+                    pitch=0,
+                ),
+                layers=[_tile_layer, _path_layer, _ep_layer],
+                tooltip={"text": "{label}"},
+            )
+
+            st.markdown("🚢 **陆海物流路径演示（示意）**")
+            st.pydeck_chart(_route_deck, height=420)
+            st.caption("示意线路，基于公开通道规划，非精确导航路径")
+
+    except FileNotFoundError:
+        st.warning(f"未找到路径数据文件：{_geojson_path}")
+    except Exception as _e:
+        st.warning(f"路径地图渲染失败：{_e}")
+
+# —— 聊天输入分隔 ——
+st.divider()
 
 
 # =========================================================================
@@ -459,22 +658,34 @@ if question:
             ])
             st.markdown("🗺️ **平陆运河关键点位（真实坐标）**")
 
-            # pydeck ScatterplotLayer：起点绿 / 终点红
+            # pydeck ScatterplotLayer：起点绿 #059669 / 终点红 #DC2626 / 其他蓝
             colors = []
             for lbl in map_df["label"]:
                 if "起点" in str(lbl):
-                    colors.append([16, 185, 129])   # 绿 #10B981
+                    colors.append([5, 150, 105])      # #059669
                 elif "终点" in str(lbl):
-                    colors.append([239, 68, 68])    # 红 #EF4444
+                    colors.append([220, 38, 38])      # #DC2626
                 else:
-                    colors.append([37, 99, 235])    # 蓝 #2563EB（其他）
+                    colors.append([37, 99, 235])      # #2563EB（其他）
             map_df["color"] = colors
 
             # 地图视野：以起终点中点为中心，zoom=8
             view_lat = map_df["lat"].mean()
             view_lon = map_df["lon"].mean()
 
+            # —— 共享底图 TileLayer ——
+            _bm_url = st.session_state.get("selected_basemap_url", _BASEMAP_OPTIONS["标准地图"])
+            _q_tile = pdk.Layer(
+                "TileLayer",
+                data=_bm_url,
+                min_zoom=0,
+                max_zoom=19,
+                tile_size=256,
+                opacity=1.0,
+            )
+
             deck = pdk.Deck(
+                map_provider=None,   # 关闭 pydeck 默认 basemap，用 TileLayer 自绘
                 initial_view_state=pdk.ViewState(
                     latitude=view_lat,
                     longitude=view_lon,
@@ -482,12 +693,15 @@ if question:
                     pitch=30,
                 ),
                 layers=[
+                    _q_tile,
                     pdk.Layer(
                         "ScatterplotLayer",
                         data=map_df,
                         get_position=["lon", "lat"],
                         get_color="color",
                         get_radius=8000,
+                        radius_min_pixels=6,
+                        radius_max_pixels=12,
                         pickable=True,
                         filled=True,
                         stroked=True,

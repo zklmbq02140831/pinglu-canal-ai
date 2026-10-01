@@ -1,0 +1,71 @@
+{
+  "type": "FeatureCollection",
+  "features": [
+    {
+      "type": "Feature",
+      "properties": {
+        "name": "钦州港 → 南宁 → 贵阳",
+        "color": "#2563EB",
+        "mode": "陆路"
+      },
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [108.60, 21.70],
+          [108.32, 22.82],
+          [106.63, 26.65]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "name": "钦州港 → 南宁 → 成都",
+        "color": "#EA580C",
+        "mode": "陆路"
+      },
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [108.60, 21.70],
+          [108.32, 22.82],
+          [104.07, 30.57]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "name": "钦州港 → 南宁 → 昆明",
+        "color": "#7C3AED",
+        "mode": "陆路"
+      },
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [108.60, 21.70],
+          [108.32, 22.82],
+          [102.83, 24.88]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "name": "钦州港 → 海上 → 新加坡港",
+        "color": "#059669",
+        "mode": "海运"
+      },
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [108.60, 21.70],
+          [109.5, 15.5],
+          [108.0, 8.0],
+          [105.5, 3.5],
+          [103.85, 1.29]
+        ]
+      }
+    }
+  ]
+}
