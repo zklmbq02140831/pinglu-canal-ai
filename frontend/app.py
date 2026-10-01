@@ -74,10 +74,6 @@ CUSTOM_CSS = """
     margin: 0 0 14px 0;
     font-family: "PingFang SC", "Microsoft YaHei", sans-serif;
 }
-.hero-arch {
-    font-size: 13px; opacity: 0.85; line-height: 1.6;
-    font-family: "PingFang SC", "Microsoft YaHei", sans-serif;
-}
 .hero-snapshot {
     position: absolute; top: 24px; right: 32px;
     background: rgba(255,255,255,0.22);
@@ -226,6 +222,51 @@ button[kind="secondary"]:hover {
     margin-bottom: 8px;
     letter-spacing: 0.3px;
 }
+
+/* ===== 兜底原文徽章（黄色） ===== */
+.fallback-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    background: #FEF3C7;
+    border: 1px solid #F59E0B;
+    color: #92400E;
+    font-size: 11px;
+    font-weight: 600;
+    padding: 2px 10px;
+    border-radius: 12px;
+    margin-bottom: 8px;
+    letter-spacing: 0.3px;
+}
+
+/* ===== 兜底提示横幅（黄色） ===== */
+.fallback-alert {
+    background: linear-gradient(135deg, #FEF3C7 0%, #FDE68A 100%);
+    border: 1px solid #F59E0B;
+    border-radius: 10px;
+    padding: 10px 16px;
+    color: #92400E;
+    font-size: 13px;
+    font-weight: 500;
+    margin-bottom: 12px;
+}
+
+/* ===== 兜底分条 chunk 卡片 ===== */
+.fallback-chunk {
+    background: #FFFBEB;
+    border: 1px solid #FDE68A;
+    border-left: 4px solid #F59E0B;
+    border-radius: 8px;
+    padding: 12px 16px;
+    margin-bottom: 10px;
+}
+.fallback-chunk-title {
+    font-size: 13px; font-weight: 700; color: #92400E; margin-bottom: 6px;
+}
+.fallback-chunk-text {
+    font-size: 12px; color: #78350F; line-height: 1.7;
+    white-space: pre-wrap;
+}
 </style>
 """
 st.markdown(CUSTOM_CSS, unsafe_allow_html=True)
@@ -255,7 +296,7 @@ with st.sidebar:
     # key 保持稳定（用 label 的简短 key），显示 label 带 emoji
     _PRESETS = [
         ("📍 起点坐标", "preset_coord",     "平陆运河起点坐标是什么"),
-        ("🏘️ 沿线乡镇", "preset_town",      "检索沿线5公里内的乡镇"),
+        ("📊 网格指标", "preset_town",      "平陆运河沿线网格的空间指标概况"),
         ("📈 经济带动", "preset_economy",   "平陆运河对广西经济的带动作用"),
         ("⚠️ 负样本",   "preset_negative",  "跨境电商退税"),
         ("🌤️ 兜底题",   "preset_fallback", "今天天气怎么样"),
@@ -295,10 +336,6 @@ st.markdown(
         <div class="hero-snapshot">📦 snapshot = v2026-09</div>
         <div class="hero-title">平陆运河多Agent智能问答系统</div>
         <div class="hero-subtitle">基于 LangGraph + 智谱 GLM-4-Flash 的空间-政策协同问答</div>
-        <div class="hero-arch">
-            🧭 RouterAgent（意图路由） → 📍 IndexAgent（空间分析）<br>
-            &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;→ 📜 PolicyAgent（政策 RAG · Qdrant 向量检索）
-        </div>
     </div>
     """,
     unsafe_allow_html=True,
@@ -356,14 +393,52 @@ if question:
 
         # —— 答案正文（unknown 场景去重：兜底文案与蓝框重复，跳过）——
         if intent != "unknown":
-            # 正则剥离 [事实锚定·本地快照] 前缀（可能出现多次）
             original_answer = answer
-            cleaned_answer = re.sub(r"\[事实锚定·本地快照\]\s*", "", answer)
-            has_anchor_tag = cleaned_answer != original_answer
-            # 渲染绿色徽章（独立标签，不混正文）
-            if has_anchor_tag:
-                st.markdown('<div class="anchor-badge">📌 事实锚定</div>', unsafe_allow_html=True)
-            st.markdown(cleaned_answer)
+
+            # —— 检测兜底原文标记 ——
+            fallback_match = re.match(
+                r"^\[政策原文兜底·本地快照\]\s*\n?(.*)", original_answer, re.DOTALL
+            )
+            if fallback_match:
+                # 渲染黄色徽章 + 兜底提示横幅
+                st.markdown(
+                    '<div class="fallback-badge">📜 兜底原文</div>',
+                    unsafe_allow_html=True,
+                )
+                st.markdown(
+                    '<div class="fallback-alert">⚠️ 在线合成暂不可用,以下为检索原文</div>',
+                    unsafe_allow_html=True,
+                )
+                # 解析 JSON chunks
+                import json as _json
+                raw_json = fallback_match.group(1).strip()
+                try:
+                    chunks = _json.loads(raw_json)
+                    if isinstance(chunks, list):
+                        for i, c in enumerate(chunks, 1):
+                            st.markdown(
+                                f"""
+                                <div class="fallback-chunk">
+                                    <div class="fallback-chunk-title">
+                                        {i}. 《{c.get('title', '未知')}》
+                                        {c.get('level', '')} · {c.get('issue_date', '')}
+                                    </div>
+                                    <div class="fallback-chunk-text">{c.get('text', '')}</div>
+                                </div>
+                                """,
+                                unsafe_allow_html=True,
+                            )
+                except Exception:
+                    # JSON 解析失败 → 退化为直接显示
+                    st.markdown(raw_json)
+            else:
+                # 正则剥离 [事实锚定·本地快照] 前缀（可能出现多次）
+                cleaned_answer = re.sub(r"\[事实锚定·本地快照\]\s*", "", answer)
+                has_anchor_tag = cleaned_answer != original_answer
+                # 渲染绿色徽章（独立标签，不混正文）
+                if has_anchor_tag:
+                    st.markdown('<div class="anchor-badge">📌 事实锚定</div>', unsafe_allow_html=True)
+                st.markdown(cleaned_answer)
 
         # —— intent=unknown 蓝框提示 ——
         if intent == "unknown":
@@ -447,7 +522,7 @@ if question:
                     <div class="source-card">
                         <div class="source-title">
                             {i}. {title}
-                            <span class="source-score">{score:.3f}</span>
+                            <span class="source-score" title="向量余弦相似度;阈值0.45,低于则拒答">相关度 {score:.3f}</span>
                         </div>
                         {f'<div class="source-snippet">{snippet[:300]}</div>' if snippet else ''}
                     </div>

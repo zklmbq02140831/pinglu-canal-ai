@@ -276,6 +276,11 @@ SYSTEM_PROMPT = """你是平陆运河经济带空间分析专员，只负责回�
 
 **铁律3（话术诚实）：** 严禁宣称任何未执行的操作。系统渲染地图由前端决定，你只需输出正确数据即可——禁止主动说"已为您定位到地图"或"已在地图上标注"等话术。
 
+**铁律4（网格级粒度诚实叙述）：**
+- 网格统计值必须明确说明粒度为"网格级"并带上具体指标名（如"某网格 composite_index=0.7823"），禁止把统计值叙述为"有N个POI"、"有N条道路"这类计数口吻。
+- 数据集仅含网格级统计指标（composite_index、poi_density、road_density、slope_mean、gdp、port_dist），不含乡镇名录、企业名录等精细数据——问题超出数据能力时，必须明示"数据集为网格级统计,不含该信息"，再引导可答的网格指标概况。
+- 指标单位以工具返回的 JSON 字段为准，查不到明确单位就写"(网格级统计值)"，禁止编造任何单位（如"亿元"、"个"、"米"等）。
+
 只陈述事实，不推断因果。
 """
 
@@ -535,7 +540,11 @@ def run(question: str, agent=None) -> dict[str, Any]:
         not hex_ids
         and any(k.lower() in question.lower() for k in numeric_keywords)
     )
-    has_canal_fact_trigger = any(k in question for k in canal_fact_keywords)
+    # canal_fact 仅在未调用任何 spatial 工具时触发（避免覆盖已有的指标回答）
+    has_canal_fact_trigger = (
+        not hex_ids
+        and any(k in question for k in canal_fact_keywords)
+    )
     if has_spatial_trigger or has_canal_fact_trigger:
         injected = _proactive_fetch(question)
         if injected:

@@ -162,6 +162,7 @@ SYSTEM_PROMPT = """你是平陆运河经济带政策法规解读专员，只负�
 
 铁律：
 - 必须先调用 search_policy 工具检索政策依据，**禁止凭记忆回答**。
+- **禁止在未调用 search_policy 工具的情况下输出任何政策引用、法规名称或机构文件——没有工具返回就没有政策依据**。
 - 如果 search_policy 返回 empty=true（政策库未涉及），如实回复"该问题平陆运河现行政策未涉及"，**禁止编造**。
 - 所有数字和事实以工具返回的政策原文为准，不推断、不扩展。
 """
@@ -250,7 +251,7 @@ def run(question: str, agent=None) -> dict[str, Any]:
             seen.add(key)
             deduped.append(s)
 
-    # —— 兜底：LLM 没调 search_policy（sources 空）但问题非负样本 → 主动搜真政策 ——
+    # —— 兜底：LLM 没调 search_policy（sources 空）但问题非负样本 → 主动搜真政策 + 二次LLM合成 ——
     negative_keywords = ("退税", "量子", "红烧肉", "股市", "比特币")
     no_tool_but_positive = (
         not deduped
@@ -259,15 +260,61 @@ def run(question: str, agent=None) -> dict[str, Any]:
     if no_tool_but_positive:
         real = search_policy(question)
         if not real["empty"]:
-            # 替换 answer 为基于真实政策的综合（避免 LLM 编造）
+            # 取 top3，每条 chunk 截断至 800 字（上下文裁剪防未来超长）
             real_hits = real["hits"][:3]
-            ref_parts = []
+            context_chunks = []
             for h in real_hits:
-                ref_parts.append(
-                    f"（《{h['title']}》{h['level']}，{h['issue_date']}）"
-                    f"{h['chunk_text'][:120]}"
+                context_chunks.append(
+                    f"【文档】{h['title']}（{h['level']}，{h['issue_date']}）\n"
+                    f"【原文】{h['chunk_text'][:800]}"
                 )
-            answer = "[政策原文兜底·本地快照] " + "; ".join(ref_parts) + "。已为您定位到政策来源"
+            context_str = "\n---\n".join(context_chunks)
+
+            # —— 二次 LLM 合成：基于真实检索到的 chunks 流畅回答 ——
+            synth_success = False
+            try:
+                from langchain_openai import ChatOpenAI
+                synth_llm = ChatOpenAI(
+                    model=LLM_MODEL,
+                    base_url="https://open.bigmodel.cn/api/paas/v4",
+                    api_key=_read_zhipu_key(),
+                    temperature=0.2,
+                    timeout=60,
+                )
+                synth_prompt = (
+                    "你是平陆运河政策法规解读专员。基于以下真实政策原文，"
+                    "对用户问题做简洁专业的回答。\n\n"
+                    f"【用户问题】{question}\n\n"
+                    f"【政策原文】\n{context_str}\n\n"
+                    "要求：直接给结论，再列出引用依据（格式：《文档标题》摘引关键句）。"
+                    "最多引用3条。末尾加'已为您定位到政策来源'。"
+                )
+                synth_resp = synth_llm.invoke(synth_prompt)
+                synth_text = synth_resp.content if hasattr(synth_resp, "content") else str(synth_resp)
+                # 合成成功且非空 → 采用
+                if synth_text and len(synth_text.strip()) > 20:
+                    answer = synth_text.strip()
+                    synth_success = True
+            except Exception:
+                synth_success = False
+
+            # —— 合成失败 → 结构化兜底展示（前端渲染分条卡片 + 徽章）——
+            if not synth_success:
+                # 收集结构化 chunks 供前端分条渲染
+                fallback_chunks = []
+                for h in real_hits:
+                    fallback_chunks.append({
+                        "title": h["title"],
+                        "level": h["level"],
+                        "issue_date": h["issue_date"],
+                        "text": h["chunk_text"][:500],
+                    })
+                import json as _json
+                answer = "[政策原文兜底·本地快照]\n" + _json.dumps(
+                    fallback_chunks, ensure_ascii=False
+                )
+
+            # sources 字段填充（合成成功或失败都需要真实来源）
             deduped = [{
                 "doc_no": h["doc_no"],
                 "title": h["title"],
