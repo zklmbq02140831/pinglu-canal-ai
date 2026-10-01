@@ -277,6 +277,10 @@ st.markdown(CUSTOM_CSS, unsafe_allow_html=True)
 # =========================================================================
 # =========================================================================
 # 底图源配置（仅标准 / 卫星可用；天地图需 TIANDITU_KEY 才启用）
+# pydeck 渲染自定义 XYZ 瓦片：将瓦片 URL 转为 mapbox raster 样式 JSON
+# 字符串，通过 map_style 传给 Deck —— 这是 deck.gl 9.x 唯一能正确渲染
+# 自定义 XYZ 瓦片的方式（TileLayer 在此版本的 pydeck+Streamlit 组合
+# 中会被错误地序列化为 GeoJsonLayer）。
 # =========================================================================
 _BASEMAP_OPTIONS = {
     "标准地图": "https://tile.openstreetmap.org/{z}/{x}/{y}.png",
@@ -287,14 +291,46 @@ _BASEMAP_OPTIONS = {
 _TIANDITU_KEY = os.environ.get("TIANDITU_KEY", "")
 _HAS_TIANDITU = bool(_TIANDITU_KEY)
 if _HAS_TIANDITU:
-    # 底图 + 注记组合（pydeck TileLayer 不支持多图层叠加的注记，
-    # 这里仅用 img_w 底图 + cva_w 注记 URL 作为两个 TileLayer 共享 key）
     _BASEMAP_OPTIONS["天地图影像"] = (
         f"https://t{sorted(list('01234567'))[0]}.tianditu.gov.cn/img_w/wmts?"
         f"SERVICE=WMTS&REQUEST=GetTile&VERSION=1.0.0&LAYER=img&STYLE=default&"
         f"TILEMATRIXSET=w&FORMAT=tiles&TILEMATRIX={{z}}&TILEROW={{y}}&TILECOL={{x}}&"
         f"tk={_TIANDITU_KEY}"
     )
+
+
+def _tile_url_to_mapstyle(tile_url: str) -> str:
+    """将 XYZ 瓦片模板 URL 转为 data:application/json;base64, 形式的 mapbox raster 样式。
+
+    为什么：deck.gl 9.x 的 DeckGL 组件要求 mapStyle 为字符串；
+    普通 mapbox 样式 JSON 字符串若包含 http:// 会被误判为 URL 去 fetch，
+    dict 又会在 JS 端触发 e.mapStyle?.includes is not a function；
+    data URI 是唯一能让 deck.gl 正确识别为内联样式的方式。
+    """
+    import base64 as _b64
+    import json as _json
+    style = {
+        "version": 8,
+        "sources": {
+            "custom-tiles": {
+                "type": "raster",
+                "tiles": [tile_url],
+                "tileSize": 256,
+            }
+        },
+        "layers": [
+            {
+                "id": "custom-tiles",
+                "type": "raster",
+                "source": "custom-tiles",
+                "minzoom": 0,
+                "maxzoom": 19,
+            }
+        ],
+    }
+    json_str = _json.dumps(style)
+    b64 = _b64.b64encode(json_str.encode("utf-8")).decode("ascii")
+    return f"data:application/json;base64,{b64}"
 
 
 with st.sidebar:
@@ -477,16 +513,9 @@ if _any_route_checked:
             # 中国-东南亚范围足够大，zoom=4 即可覆盖
             _view_zoom = 4
 
-            # —— 共享底图 TileLayer ——
+            # —— 共享底图：mapbox raster 样式 dict（map_provider='mapbox' 配合使用）——
             _bm_url = st.session_state.get("selected_basemap_url", _BASEMAP_OPTIONS["标准地图"])
-            _tile_layer = pdk.Layer(
-                "TileLayer",
-                data=_bm_url,
-                min_zoom=0,
-                max_zoom=19,
-                tile_size=256,
-                opacity=1.0,
-            )
+            _map_style = _tile_url_to_mapstyle(_bm_url)
 
             # —— PathLayer ——
             _path_layer = pdk.Layer(
@@ -517,14 +546,15 @@ if _any_route_checked:
             )
 
             _route_deck = pdk.Deck(
-                map_provider=None,   # 关闭 pydeck 默认 basemap，用 TileLayer 自绘
+                map_provider="mapbox",
+                map_style=_map_style,
                 initial_view_state=pdk.ViewState(
                     latitude=_view_lat,
                     longitude=_view_lon,
                     zoom=_view_zoom,
                     pitch=0,
                 ),
-                layers=[_tile_layer, _path_layer, _ep_layer],
+                layers=[_path_layer, _ep_layer],
                 tooltip={"text": "{label}"},
             )
 
@@ -673,19 +703,13 @@ if question:
             view_lat = map_df["lat"].mean()
             view_lon = map_df["lon"].mean()
 
-            # —— 共享底图 TileLayer ——
+            # —— 共享底图：mapbox raster 样式 dict（map_provider='mapbox' 配合使用）——
             _bm_url = st.session_state.get("selected_basemap_url", _BASEMAP_OPTIONS["标准地图"])
-            _q_tile = pdk.Layer(
-                "TileLayer",
-                data=_bm_url,
-                min_zoom=0,
-                max_zoom=19,
-                tile_size=256,
-                opacity=1.0,
-            )
+            _map_style = _tile_url_to_mapstyle(_bm_url)
 
             deck = pdk.Deck(
-                map_provider=None,   # 关闭 pydeck 默认 basemap，用 TileLayer 自绘
+                map_provider="mapbox",
+                map_style=_map_style,
                 initial_view_state=pdk.ViewState(
                     latitude=view_lat,
                     longitude=view_lon,
@@ -693,7 +717,6 @@ if question:
                     pitch=30,
                 ),
                 layers=[
-                    _q_tile,
                     pdk.Layer(
                         "ScatterplotLayer",
                         data=map_df,
