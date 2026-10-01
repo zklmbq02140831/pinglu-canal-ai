@@ -60,53 +60,57 @@ def phase1():
     # —— 1.1 Qdrant 库存在 ——
     _check(QDRANT_PATH.exists(), f"Qdrant 目录存在: {QDRANT_PATH}")
     client = QdrantClient(path=str(QDRANT_PATH))
-    _check(
-        client.collection_exists(COLLECTION),
-        f"collection '{COLLECTION}' 存在",
-    )
+    try:
+        _check(
+            client.collection_exists(COLLECTION),
+            f"collection '{COLLECTION}' 存在",
+        )
 
-    # —— 1.2 总 chunk 数 > 100 ——
-    total = client.count(COLLECTION).count
-    _check(total > 100, f"总 chunk 数 = {total}  (> 100)")
+        # —— 1.2 总 chunk 数 > 100 ——
+        total = client.count(COLLECTION).count
+        _check(total > 100, f"总 chunk 数 = {total}  (> 100)")
 
-    # —— 1.3 doc_no 去重 = 13 ——
-    all_points, _offset = client.scroll(
-        COLLECTION, limit=total, with_payload=True, with_vectors=False
-    )
-    doc_nos = set()
-    for pt in all_points:
-        doc_nos.add(pt.payload.get("doc_no", ""))
-    doc_nos.discard("")
-    _check(
-        len(doc_nos) == 13,
-        f"13 份文档全部入库 (doc_no 去重={sorted(doc_nos)})",
-    )
+        # —— 1.3 doc_no 去重 = 13 ——
+        all_points, _offset = client.scroll(
+            COLLECTION, limit=total, with_payload=True, with_vectors=False
+        )
+        doc_nos = set()
+        for pt in all_points:
+            doc_nos.add(pt.payload.get("doc_no", ""))
+        doc_nos.discard("")
+        _check(
+            len(doc_nos) == 13,
+            f"13 份文档全部入库 (doc_no 去重={sorted(doc_nos)})",
+        )
 
-    # —— 1.4 每条 payload 必填字段非空 ——
-    REQUIRED = ("doc_no", "title", "issuer", "issue_date", "level", "snapshot")
-    empty_fields: list[str] = []
-    for pt in all_points:
-        p = pt.payload
-        for f in REQUIRED:
-            if not p.get(f):
-                empty_fields.append(f"id={pt.id} 缺 {f}")
-                break
-    _check(
-        not empty_fields,
-        f"每条 payload 必填字段全非空  ({len(all_points)} 条检查)",
-    )
+        # —— 1.4 每条 payload 必填字段非空 ——
+        REQUIRED = ("doc_no", "title", "issuer", "issue_date", "level", "snapshot")
+        empty_fields: list[str] = []
+        for pt in all_points:
+            p = pt.payload
+            for f in REQUIRED:
+                if not p.get(f):
+                    empty_fields.append(f"id={pt.id} 缺 {f}")
+                    break
+        _check(
+            not empty_fields,
+            f"每条 payload 必填字段全非空  ({len(all_points)} 条检查)",
+        )
 
-    # —— 1.5 snapshot 全部 = v2026-09 ——
-    bad_snap = [
-        f"id={pt.id} snap={pt.payload.get('snapshot')}"
-        for pt in all_points
-        if pt.payload.get("snapshot") != SNAPSHOT
-    ]
-    _check(not bad_snap, f"所有 snapshot='{SNAPSHOT}'")
-
-    # —— 显式 close（Windows portalocker 互斥锁）——
-    client.close()
-    del client
+        # —— 1.5 snapshot 全部 = v2026-09 ——
+        bad_snap = [
+            f"id={pt.id} snap={pt.payload.get('snapshot')}"
+            for pt in all_points
+            if pt.payload.get("snapshot") != SNAPSHOT
+        ]
+        _check(not bad_snap, f"所有 snapshot='{SNAPSHOT}'")
+    finally:
+        # —— 显式 close（消除 QdrantClient.__del__ 噪音，Windows portalocker 互斥锁）——
+        try:
+            client.close()
+        except Exception:
+            pass
+        del client
 
     # —— 1.6 烟雾测试 search_policy ——
     r = search_policy("平陆运河经济")
@@ -196,6 +200,15 @@ def phase2():
         print(f"\n  🎯 Phase 2 全部通过 ✨")
     else:
         print(f"\n  ⚠️  Phase 2 存在失败项")
+
+    # —— 显式关闭 policy_agent 模块级懒加载的 QdrantClient 单例 ——
+    # 消除退出时 "Exception ignored in: QdrantClient.__del__" 噪音
+    if hasattr(policy_agent, "_qdrant_client") and policy_agent._qdrant_client is not None:
+        try:
+            policy_agent._qdrant_client.close()
+        except Exception:
+            pass
+        policy_agent._qdrant_client = None
 
 
 # =========================================================================
