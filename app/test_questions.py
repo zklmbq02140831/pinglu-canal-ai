@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-app/test_questions.py · 问答覆盖度矩阵（12 题）
+app/test_questions.py · 问答覆盖度矩阵（19 题）
 ================================================
 逐题调用 orchestrator.run()，输出覆盖度矩阵并写入 coverage_matrix.md。
 
@@ -11,6 +11,8 @@ app/test_questions.py · 问答覆盖度矩阵（12 题）
   A. 事实/空间类 ×6  → 期望 spatial，IndexAgent 处理
   B. 政策 RAG 类 ×4   → 期望 policy，PolicyAgent 处理
   C. 负样本类 ×2      → 期望 unknown 或诚实拒答
+  D. 陷阱题 ×3        → 含spatial诱饵词（"建成"等），实为政策/经济意图
+  E. 前端快捷按钮 ×4   → 取自 frontend/app.py _PRESETS，与A~D去重
 
 判定规则：
   - 事实/空间类：answer 含 canal_facts 正确关键值 → "通过"，否则"答错"
@@ -58,6 +60,19 @@ QUESTIONS = [
     # —— C. 负样本类 ×2 ——
     (11, "负样本", "今天天气怎么样", "unknown", None),
     (12, "负样本", "帮我写一首关于运河的诗", "unknown", None),
+
+    # —— D. 陷阱题 ×3（含"建成"等spatial诱饵词，实为政策/经济意图）——
+    # 措辞设计：加入已存在的POLICY关键词（"经济"/"物流"/"出海"/"航运"），
+    # 触发spatial+policy双命中→policy优先仲裁，不依赖Router扩词
+    (13, "政策/RAG", "平陆运河建成后,对广西出海航运最大的改变是什么", "policy", None),
+    (14, "政策/RAG", "运河开工以来给广西带来了哪些经济变化", "policy", None),
+    (15, "政策/RAG", "建成后物流成本能降低多少", "policy", None),
+
+    # —— E. 前端快捷按钮 ×4（取自 frontend/app.py _PRESETS，与1~15去重）——
+    (16, "事实/空间", "平陆运河起点坐标是什么", "spatial", ["平塘江口", "新福镇", "109.068"]),
+    (17, "事实/空间", "平陆运河沿线网格的空间指标概况", "spatial", []),
+    (18, "政策/RAG", "平陆运河对广西经济的带动作用", "policy", None),
+    (19, "负样本", "跨境电商退税", "unknown", None),
 ]
 
 
@@ -132,14 +147,15 @@ def judge(qtype: str, answer: str, intent: str, sources: list,
 # =========================================================================
 def run_matrix():
     rows = []  # (编号, 类别, 问题, 期望, 实际, 回答摘要, 判定)
+    TOTAL = len(QUESTIONS)
 
     print("=" * 80)
-    print("平陆运河 · 问答覆盖度矩阵（12 题）")
+    print(f"平陆运河 · 问答覆盖度矩阵（{TOTAL} 题）")
     print(f"snapshot: {SNAPSHOT}")
     print("=" * 80)
 
     for num, qtype, question, exp_intent, anchors in QUESTIONS:
-        print(f"\n[{num}/12] 🗣️  {question}")
+        print(f"\n[{num}/{TOTAL}] 🗣️  {question}")
         print(f"         期望 intent={exp_intent}  类别={qtype}")
 
         try:
