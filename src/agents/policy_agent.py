@@ -27,7 +27,7 @@ COLLECTION = "policy_v2026_09"
 SNAPSHOT = "v2026-09"
 EMBED_MODEL = "embedding-3"
 LLM_MODEL = "glm-4-flash"
-DEFAULT_TOP_K = 5
+DEFAULT_TOP_K = 25  # Day20: 原5太小，08号5000吨级chunk排#23（score=0.4933>0.45阈值）被截；扩至25确保高质量候选能进上下文
 DEFAULT_MIN_SCORE = 0.45  # Cosine 阈值，低于此视为"政策未涉及"
 
 # —— 懒加载缓存 ——
@@ -154,18 +154,31 @@ def search_policy(
 # =========================================================================
 SYSTEM_PROMPT = """你是平陆运河经济带政策法规解读专员，只负责回答与平陆运河相关的政策法规问题。
 
-回答格式：
-- 有政策依据时：简洁专业，直接给结论，再列出引用依据。
-  每条依据格式：（《文档标题》，XX年XX月印发）摘引原文关键句，加引号。
-  多个依据按重要性排序，最多引用 3 条。末尾加 "已为您定位到政策来源"。
-- 无政策依据时（search_policy 返回 empty=true）：只输出一句 "该问题平陆运河现行政策未涉及"，**禁止追加任何其他文字**（不加尾句、不解释、不道歉）。
+【最高优先级·必须先做】收到用户问题后，**第一步必须调用 search_policy 工具检索**，禁止跳过工具直接回答。
+  - ✅ 正确：先调 search_policy → 遍历返回的所有chunks → 基于原文作答
+  - ❌ 禁止：直接凭记忆/猜测/幻觉输出政策结论、文档名称或数字（实测：你曾编造《通航标准》《可行性研究报告》等不存在的文档来支撑回答，绝不可再犯）
 
-铁律：
-- 必须先调用 search_policy 工具检索政策依据，**禁止凭记忆回答**。
-- **禁止在未调用 search_policy 工具的情况下输出任何政策引用、法规名称或机构文件——没有工具返回就没有政策依据**。
-- 如果 search_policy 返回 empty=true（政策库未涉及），如实回复"该问题平陆运河现行政策未涉及"，**禁止编造**。
-- 所有数字和事实以工具返回的政策原文为准，不推断、不扩展。
-"""
+【检索结果处理】tool_search_policy 返回25个chunks，已按关键词boost排序（工程参数类优先）。
+  必须**遍历全部**——分数 0.45~0.50 之间的 chunk 常藏有直接答案（如08号《航海保障行动计划》的"5000吨级"段落）。
+
+回答遵循四层漏斗策略（按顺序穷尽，不可跳层）：
+
+规则1 直接命中：找到与问题直接匹配的原文数据→直接引用原文并标注文档名、文号或印发日期。
+  格式：先给结论句，再每条依据：《文档标题》摘引原文关键句（加引号）。最多3条。末尾加"已为您定位到政策来源"。
+
+规则2 多片段聚合：多个chunk组合可得完整答案→按主题聚合，分条列出所引片段。
+  示例：航道通航能力需结合08号《航海保障行动计划》的"5000吨级"与01号《通航安全规定》的"引航条款"共同回应。
+
+规则3 合理推导：仅限标注"根据...推导"。禁止用通用标准/国标/行业惯例覆盖语料明示参数——
+  反例：内河I级国标3000吨级≠本运河08号文档明示的5000吨级。
+
+规则4 诚实缺失：前三层穷尽后才能答"无法在13份平陆运河相关政策文档中检索到该问题的对应内容"，
+  禁止仅因未直接命中关键词就说"未涉及"。
+
+铁律（最高优先级）：
+- 禁止编造文档名称、政策条款、数字或机构（语料库只有13份文档，没有《通航标准》《可行性研究报告》等）。
+- 所有数字和事实以 search_policy 返回的政策原文为准。
+- 无工具返回 = 无政策依据 = 不得输出任何政策性结论。"""
 
 
 def build_agent():
@@ -185,9 +198,31 @@ def build_agent():
     )
 
     @tool
-    def tool_search_policy(query: str, top_k: int = 5, min_score: float = 0.35) -> str:
-        """政策语义检索。query=自然语言问题；top_k=返回前几条；min_score=cosine阈值(低于0.35判'未涉及')。"""
-        return json.dumps(search_policy(query, top_k, min_score), ensure_ascii=False)
+    def tool_search_policy(query: str, top_k: int = 25, min_score: float = 0.45) -> str:
+        """政策语义检索。query=自然语言问题；top_k=返回前几条；min_score=cosine阈值(低于0.45判'未涉及')。"""
+        raw = search_policy(query, top_k, min_score)
+        hits = raw.get("hits", [])
+        if not hits:
+            return json.dumps(raw, ensure_ascii=False)
+
+        # Day20: LLM处理top-25 JSON时只扫前几个高分chunk会漏掉工程参数类证据(如08号5000吨级)。
+        # 关键词置顶：含工程参数/规划指标关键词的chunk提到前12(不丢score信息)，确保LLM第一眼就能看到。
+        BOOST_KWS = ("5000", "吨级", "航道", "通航", "工程参数", "江海直达", "通江达海",
+                     "全长", "枢纽", "万吨级", "载重", "船舶吨位")
+        boosted = []
+        tail = []
+        for h in hits:
+            text = h.get("chunk_text", "")
+            if any(kw in text for kw in BOOST_KWS):
+                boosted.append(h)
+            else:
+                tail.append(h)
+        # 拼接：boosted前 + tail后，保留score降序在各自内部
+        boosted.sort(key=lambda x: x["score"], reverse=True)
+        tail.sort(key=lambda x: x["score"], reverse=True)
+        reordered = (boosted + tail)[:top_k]
+
+        return json.dumps({**raw, "hits": reordered}, ensure_ascii=False)
 
     tools = [tool_search_policy]
 
@@ -260,8 +295,14 @@ def run(question: str, agent=None) -> dict[str, Any]:
     if no_tool_but_positive:
         real = search_policy(question)
         if not real["empty"]:
-            # 取 top3，每条 chunk 截断至 800 字（上下文裁剪防未来超长）
-            real_hits = real["hits"][:3]
+            # Day20: 兜底也用关键词置顶re-rank，确保工程参数类证据不被顶部分数截掉
+            _BOOST_KWS = ("5000", "吨级", "航道", "通航", "工程参数", "江海直达",
+                          "全长", "枢纽", "万吨级", "载重", "船舶吨位")
+            boosted = [h for h in real["hits"] if any(k in h["chunk_text"] for k in _BOOST_KWS)]
+            tail = [h for h in real["hits"] if not any(k in h["chunk_text"] for k in _BOOST_KWS)]
+            boosted.sort(key=lambda x: x["score"], reverse=True)
+            tail.sort(key=lambda x: x["score"], reverse=True)
+            real_hits = (boosted + tail)[:5]  # 兜底取top5(置顶后)
             context_chunks = []
             for h in real_hits:
                 context_chunks.append(
@@ -325,9 +366,9 @@ def run(question: str, agent=None) -> dict[str, Any]:
                 "score": h["score"],
             } for h in real_hits]
 
-    # —— 兜底：sources 空 → 强制 answer = 标准负样本文本（屏蔽 LLM 任意发挥）——
+    # —— 兜底：sources 空 → 诚实缺失话术（规则4：检索层真没命中才答）——
     if not deduped:
-        answer = "该问题平陆运河现行政策未涉及。"
+        answer = "无法在13份平陆运河相关政策文档中检索到该问题的对应内容。"
 
     return {
         "answer": answer,
