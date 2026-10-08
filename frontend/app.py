@@ -33,7 +33,7 @@ def _get_orchestrator():
 # 页面配置
 # =========================================================================
 st.set_page_config(
-    page_title="智汇运河 · 平陆运河多智能体决策支持平台",
+    page_title="智汇运河 · 面向陆海联动的多智能体决策平台",
     page_icon="🚢",
     layout="wide",
     initial_sidebar_state="expanded",
@@ -379,7 +379,7 @@ with st.sidebar:
         """
         <div class="sys-card">
             <div class="sys-card-title">🚢 智汇运河</div>
-            <div class="sys-card-item">多智能体决策支持与空间智能平台</div>
+            <div class="sys-card-item">面向陆海联动的多智能体决策平台</div>
             <div class="sys-card-item">📦 snapshot = <b>v2026-09</b></div>
         </div>
         """,
@@ -448,6 +448,13 @@ with st.sidebar:
     with st.expander("ℹ️ 关于本系统", expanded=False):
         st.markdown(
             """
+            **系统名称**
+
+            - 全称：面向中国-东盟陆海联动的多智能体决策支持与空间智能平台
+            - 参赛报名名称：智汇运河:面向陆海联动的多智能体决策平台
+
+            ---
+
             **系统架构**
 
             RouterAgent 意图路由 → IndexAgent 空间分析 / PolicyAgent 政策 RAG
@@ -470,7 +477,7 @@ st.markdown(
     <div class="hero-banner">
         <div class="hero-snapshot">📦 snapshot = v2026-09</div>
         <div class="hero-title">智汇运河</div>
-        <div class="hero-subtitle">面向中国-东盟陆海联动的多智能体决策支持与空间智能平台</div>
+        <div class="hero-subtitle">面向陆海联动的多智能体决策平台</div>
     </div>
     """,
     unsafe_allow_html=True,
